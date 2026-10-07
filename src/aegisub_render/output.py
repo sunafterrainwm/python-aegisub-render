@@ -48,6 +48,12 @@ class Output:
             self.write("\n")
         self.write(text if text.endswith("\n") else text + "\n")
 
+    def error(self, text: str) -> None:
+        """An error from aegisub-render itself: printed even with --quiet."""
+        if not self._at_line_start:
+            self.write("\n")
+        self.write(text if text.endswith("\n") else text + "\n")
+
     def status(self, text: str) -> None:
         if not self.quiet:
             self.message(f"[status] {text}")
@@ -69,6 +75,12 @@ class Output:
         self.stream.write(f"\r\x1b[2K[{self._percent:5.1f}%] {label}"[:200])
         self.stream.flush()
         self._progress_shown = True
+
+    def finish_line(self) -> None:
+        """Leave the cursor at the start of a line (script output may not end with a newline)."""
+        self._clear_progress()
+        if not self._at_line_start:
+            self.write("\n")
 
     def progress_done(self) -> None:
         self._clear_progress()

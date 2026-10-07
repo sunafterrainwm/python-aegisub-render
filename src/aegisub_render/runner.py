@@ -155,16 +155,16 @@ def render(
     try:
         prepared = prepare(input_path, settings, options, out)
     except RenderError as e:
-        out.message(f"aegisub-render: {e}")
+        out.error(f"aegisub-render: {e}")
         return ExitCode.ERROR
     result = run_job(prepared.job, settings.timeout_seconds)
     if result.message:
-        out.message(result.message)
+        out.error(result.message)
     if result.status == "cancel":
-        out.message("aegisub-render: the script cancelled the operation; no output was written")
+        out.error("aegisub-render: the script cancelled the operation; no output was written")
         return ExitCode.CANCELLED
     if result.status != "ok" or result.ass is None:
-        out.message("aegisub-render: the script failed; no output was written")
+        out.error("aegisub-render: the script failed; no output was written")
         return ExitCode.ERROR
     write_ass_file(result.ass, output_path, prepared.save_ui_state)
     return ExitCode.OK
@@ -178,10 +178,10 @@ def list_features(
     try:
         prepared = prepare(input_path, settings, options, out)
     except RenderError as e:
-        out.message(f"aegisub-render: {e}")
+        out.error(f"aegisub-render: {e}")
         return None
     prepared.job.list_only = True
     result = run_job(prepared.job, settings.timeout_seconds)
     if result.message:
-        out.message(result.message)
+        out.error(result.message)
     return result.features

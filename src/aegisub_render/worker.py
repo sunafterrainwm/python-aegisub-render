@@ -149,6 +149,7 @@ def execute(job: Job, out: Output | None = None) -> Result:
         return Result("error", f"aegisub-render: unexpected Lua error in the host: {e.message}")
     finally:
         out.progress_done()
+        out.finish_line()
         if host is not None:
             host.close()
 
