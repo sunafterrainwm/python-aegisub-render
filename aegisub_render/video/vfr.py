@@ -5,7 +5,8 @@ import math
 import re
 from pathlib import Path
 
-from aegisub_render.cutil import cdiv, try_parse_double
+from aegisub_render._crt import cdiv
+from aegisub_render.cutil import try_parse_double
 
 DEFAULT_DENOMINATOR = 1_000_000_000
 MAX_TIMECODES = 10_000_000

@@ -130,7 +130,7 @@ class ScriptHost:
         (traceback_ref, self._load_script, self._features, self._validate_macro, self._run_macro, self._run_filter) = (
             refs
         )
-        self.state.traceback_ref = traceback_ref.ref
+        self.state.set_error_handler(traceback_ref)
 
     def close(self) -> None:
         self.state.close()

@@ -1,6 +1,7 @@
 """agi::Time (libaegisub/ass/time.cpp)."""
 
-from aegisub_render.cutil import mid, wrap_int32
+from aegisub_render._crt import wrap_int32
+from aegisub_render.cutil import mid
 
 MAX_TIME = 10 * 60 * 60 * 1000 - 6
 

@@ -50,7 +50,7 @@ ignore = [
 [tool.basedpyright]
 pythonVersion = "3.14"
 typeCheckingMode = "strict"
-include = ["aegisub_render", "tests", "scripts", "config.py", "native/build.py", "aegisub-render.py"]
+include = ["aegisub_render", "tests", "scripts", "config.py", "native/build.py", "native/stubgen.py", "aegisub-render.py"]
 exclude = ["reference", "native/subprojects", "**/__pycache__"]
 reportAny = false
 reportExplicitAny = false

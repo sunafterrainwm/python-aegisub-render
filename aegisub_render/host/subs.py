@@ -1,11 +1,11 @@
 """Python half of LuaAssFile (src/auto4_lua_assfile.cpp): the line list a script edits."""
 
+from aegisub_render._crt import lua_tolong
 from aegisub_render.ass.color import Color
 from aegisub_render.ass.entries import GROUP_HEADERS, AssDialogue, AssEntry, AssInfo, AssStyle, Group
 from aegisub_render.ass.file import AssFile
 from aegisub_render.ass.karaoke import parse_karaoke_syllables
 from aegisub_render.ass.time import clamp_time, time_int
-from aegisub_render.cutil import lua_tolong
 from aegisub_render.lua.state import ScriptError
 from aegisub_render.textenc import from_bytes
 

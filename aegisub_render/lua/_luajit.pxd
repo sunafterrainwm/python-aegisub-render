@@ -101,7 +101,7 @@ cdef class LuaState:
     cdef lua_State *L
     cdef list _funcs
     cdef object _pending
-    cdef public object traceback_ref
+    cdef object _traceback_ref
 
     cdef object _to_python(self, lua_State *L, int idx, int depth)
     cdef int _push(self, lua_State *L, object value, int depth) except -1

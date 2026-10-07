@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from aegisub_render._crt import format_f
 from aegisub_render.ass.codec import inline_string_encode, uuencode
 from aegisub_render.ass.entries import GROUP_HEADERS, AnyEntry, Group, ProjectProperties
 from aegisub_render.ass.file import AssFile
@@ -18,11 +19,6 @@ _FORMAT = {
         "Alignment, MarginL, MarginR, MarginV, Encoding"
     ),
 }
-
-
-def _to_string_double(v: float) -> str:
-    """std::to_string(double) == printf("%f")."""
-    return "%f" % v
 
 
 class _Writer:
@@ -66,10 +62,10 @@ class _Writer:
         if p.ar_mode != 0:
             self.line(f"Video AR Mode: {p.ar_mode}")
         if p.ar_value != 0:
-            self.line("Video AR Value: " + _to_string_double(p.ar_value))
+            self.line("Video AR Value: " + format_f(p.ar_value))
         if save_ui_state:
             if p.video_zoom != 0:
-                self.line("Video Zoom Percent: " + _to_string_double(p.video_zoom))
+                self.line("Video Zoom Percent: " + format_f(p.video_zoom))
             if p.scroll_position != 0:
                 self.line(f"Scroll Position: {p.scroll_position}")
             if p.active_row != 0:

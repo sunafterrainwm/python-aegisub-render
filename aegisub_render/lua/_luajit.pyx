@@ -1,4 +1,4 @@
-# cython: language_level=3, boundscheck=False, wraparound=False, cdivision=True
+# cython: language_level=3, boundscheck=False, wraparound=False, cdivision=True, embedsignature=True, embedsignature.format=python, binding=True
 """A LuaJIT state driven from Python.
 
 LuaJIT, lpeg, luabins and the shim are linked into this extension module (see native/).
@@ -25,6 +25,7 @@ from aegisub_render.lua.values import (
     NIL,
     ArgError,
     CancelScript,
+    FfiImpl,
     LightUserdata,
     LocatedError,
     LuaError,
@@ -69,38 +70,49 @@ cdef inline bytes _utf8(str text):
 cdef class LuaState:
     """One Lua state (aegi_newstate) with the standard libraries, lpeg and luabins loaded."""
 
-    def __cinit__(self, size_t memory_limit=0):
+    def __cinit__(self, memory_limit: int = 0):
         self.L = aegi_newstate(memory_limit)
         if self.L is NULL:
             raise MemoryError("could not create a Lua state")
         self._funcs = []
         self._pending = None
-        self.traceback_ref = None
+        self._traceback_ref = None
         cdef int status = lua_cpcall(self.L, aegi_openlibs, NULL)
         if status != 0:
             raise LuaError(status, self._to_python(self.L, -1, 0))
+
+    def __init__(self, memory_limit: int = 0) -> None:
+        """Create the state; `memory_limit` caps the Lua heap in bytes (0 = unlimited)."""
 
     def __dealloc__(self):
         if self.L is not NULL:
             aegi_close(self.L)
             self.L = NULL
 
-    def close(self):
+    def close(self) -> None:
+        """Destroy the Lua state."""
         if self.L is not NULL:
             aegi_close(self.L)
             self.L = NULL
 
     @property
-    def memory_used(self):
+    def memory_used(self) -> int:
+        """Bytes currently allocated by the Lua heap."""
         return aegi_memory_used(self.L)
 
     @property
-    def memory_peak(self):
+    def memory_peak(self) -> int:
+        """High-water mark of memory_used."""
         return aegi_memory_peak(self.L)
 
     @property
-    def memory_limit_hit(self):
+    def memory_limit_hit(self) -> bool:
+        """Whether an allocation was refused because of the memory limit."""
         return aegi_memory_limit_hit(self.L) != 0
+
+    def set_error_handler(self, ref: LuaRef | None) -> None:
+        """The function call() passes to lua_pcall as message handler (add_stack_trace)."""
+        self._traceback_ref = None if ref is None else ref.ref
 
     # ------------------------------------------------------------------ conversion
 
@@ -229,14 +241,15 @@ cdef class LuaState:
         finally:
             aegi_suspend_limit(L, 0)
 
-    def raise_pending(self):
+    def raise_pending(self) -> None:
+        """Re-raise a BaseException (e.g. KeyboardInterrupt) caught while Lua was calling Python."""
         if self._pending is not None:
             exc, self._pending = self._pending, None
             raise exc
 
     # ------------------------------------------------------------------ Python -> Lua calls
 
-    def load(self, bytes code not None, bytes chunkname not None):
+    def load(self, code: bytes, chunkname: bytes) -> LuaRef:
         """luaL_loadbuffer; returns a registry reference to the compiled chunk."""
         cdef lua_State *L = self.L
         cdef int status
@@ -251,7 +264,8 @@ cdef class LuaState:
         finally:
             aegi_suspend_limit(L, 0)
 
-    def ref(self, value):
+    def ref(self, value: object) -> LuaRef:
+        """Pin a value in the registry."""
         cdef lua_State *L = self.L
         aegi_suspend_limit(L, 1)
         try:
@@ -260,11 +274,11 @@ cdef class LuaState:
         finally:
             aegi_suspend_limit(L, 0)
 
-    def call(self, func, *args, bint handler=True):
+    def call(self, func: LuaRef, *args: object, handler: bool = True) -> tuple[object, ...]:
         """lua_pcall func(*args); results are converted to Python values."""
         return self._call(func, args, handler, False)
 
-    def call_for_refs(self, func, *args, bint handler=True):
+    def call_for_refs(self, func: LuaRef, *args: object, handler: bool = True) -> tuple[LuaRef, ...]:
         """lua_pcall func(*args); every result is pinned in the registry instead of converted."""
         return self._call(func, args, handler, True)
 
@@ -276,8 +290,8 @@ cdef class LuaState:
         aegi_suspend_limit(L, 1)
         try:
             lua_checkstack(L, len(args) + 4)
-            if handler and self.traceback_ref is not None:
-                lua_rawgeti(L, LUA_REGISTRYINDEX, self.traceback_ref)
+            if handler and self._traceback_ref is not None:
+                lua_rawgeti(L, LUA_REGISTRYINDEX, self._traceback_ref)
                 errfunc = top + 1
             self._push(L, func, 0)
             for a in args:
@@ -550,7 +564,7 @@ cdef void c_lfs_dir_free(void *it, char **err) noexcept with gil:
     _disown(it)
 
 
-def set_ffi_impl(impl):
+def set_ffi_impl(impl: FfiImpl) -> None:
     """Install the Python object behind the C function tables and build the regex flag list."""
     global _impl, _flags, _flag_names
     cdef Py_ssize_t i
@@ -574,7 +588,7 @@ def set_ffi_impl(impl):
     _impl = impl
 
 
-def ffi_functions():
+def ffi_functions() -> dict[str, dict[str, int]]:
     """Addresses of the C functions, by library and name."""
     return {
         "re": {

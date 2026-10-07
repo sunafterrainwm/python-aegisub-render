@@ -15,7 +15,10 @@
 - 沒有可信來源提供符合需求（commit、`lua52compat`、GC64、lpeg 0.10）的預建 DLL，因此自行建置；
   建置腳本照抄 Aegisub 的 meson 設定，建置產物與腳本都 commit（根目錄 `meson.build`、`native/`、套件內的 `.pyd`）。
 - 綁定用 Cython（`.pyx` 實作、`.pxd` C 宣告、`.pyi` 型別）：`_luajit` 擴充模組靜態連結 LuaJIT + lpeg 0.10 + luabins + shim
-  （與 Aegisub 把它們連進 exe 的方式相同）；`_gdi` 做 `text_extents` 的 GDI 量測。
+  （與 Aegisub 把它們連進 exe 的方式相同）；`_gdi` 做 `text_extents` 的 GDI 量測；`_crt` 用 MSVC UCRT 本身計算
+  Aegisub 依賴的 C 行為（`atoi`、`strtol`、`%g`/`%f`、C 轉型），取代原本的 Python 模擬。
+- `.pyi` 由 `native/stubgen.py` 從編好的模組產生（Cython 沒有 stub 產生器，改用 `embedsignature.format=python`
+  嵌入的簽名），不手寫。
   最初的 ctypes 版本慢約 3 倍，且 ctypes callback 的 `int` 回傳值只寫入 4 個位元組，LuaJIT 卻把整個 RAX 當索引用。
 - 原則：Lua 錯誤絕不穿越持有 Python 狀態的 frame。
   - 面向 Python 的方法只呼叫不會拋 Lua 錯誤的 API（stack 操作、push、raw 存取、受保護的

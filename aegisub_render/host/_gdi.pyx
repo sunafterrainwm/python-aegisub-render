@@ -1,4 +1,4 @@
-# cython: language_level=3, boundscheck=False, wraparound=False
+# cython: language_level=3, boundscheck=False, wraparound=False, embedsignature=True, embedsignature.format=python, binding=True
 """GDI text measurement: the WIN32 branch of Automation4::CalculateTextExtents (src/auto4_base.cpp)."""
 
 from cpython.bytes cimport PyBytes_AS_STRING, PyBytes_GET_SIZE
@@ -14,8 +14,17 @@ cdef bytes _wide(str text):
     return text.encode("utf-16-le", "surrogatepass") + b"\0\0"
 
 
-def measure(str face, long height, bint bold, bint italic, bint underline, bint strikeout, int charset,
-            str text, double spacing):
+def measure(
+    face: str,
+    height: int,
+    bold: bool,
+    italic: bool,
+    underline: bool,
+    strikeout: bool,
+    charset: int,
+    text: str,
+    spacing: float,
+) -> tuple[float, float, float, float, str] | None:
     """Select the font described by the arguments (as CalculateTextExtents builds its LOGFONT)
     and measure `text`.
 
@@ -84,7 +93,7 @@ def measure(str face, long height, bint bold, bint italic, bint underline, bint 
         DeleteDC(dc)
 
 
-def add_private_font(str path) -> bool:
+def add_private_font(path: str) -> bool:
     """AddFontResourceEx(path, FR_PRIVATE): make a font file available to this process only."""
     cdef bytes wpath = _wide(path)
     return AddFontResourceExW(<const wchar_t *>PyBytes_AS_STRING(wpath), FR_PRIVATE, NULL) != 0

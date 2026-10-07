@@ -5,9 +5,10 @@ import re
 from dataclasses import dataclass, field
 from enum import IntEnum
 
+from aegisub_render._crt import format_g
 from aegisub_render.ass.color import Color
 from aegisub_render.ass.time import ass_formatted, parse_time
-from aegisub_render.cutil import boost_lexical_double, boost_lexical_int, format_g, mid, trim
+from aegisub_render.cutil import boost_lexical_double, boost_lexical_int, mid, trim
 
 
 class SubtitleFormatParseError(Exception):

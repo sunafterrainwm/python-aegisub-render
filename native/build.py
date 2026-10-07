@@ -1,4 +1,5 @@
-"""Build the extension modules described in ../meson.build and copy them into the package.
+"""Build the extension modules described in ../meson.build, copy them into the package and
+regenerate their .pyi stubs (native/stubgen.py).
 
 Usage (from the repository root):
 
@@ -28,6 +29,7 @@ BUILD_DIR = NATIVE / "builddir"
 MODULES: dict[str, Path] = {
     "_luajit": ROOT / "aegisub_render" / "lua",
     "_gdi": ROOT / "aegisub_render" / "host",
+    "_crt": ROOT / "aegisub_render",
 }
 
 # sha256 of the files copied from the Aegisub v3.5.0 source snapshot
@@ -130,6 +132,8 @@ def main() -> None:
         target = package_dir / built[0].name
         shutil.copy2(built[0], target)
         print(f"{target.relative_to(ROOT)}  sha256={sha256(target)}")
+    # a fresh interpreter, so the modules just copied are the ones imported
+    subprocess.run([sys.executable, str(NATIVE / "stubgen.py")], cwd=ROOT, check=True)
 
 
 if __name__ == "__main__":

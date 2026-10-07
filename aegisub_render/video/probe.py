@@ -12,7 +12,8 @@ import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from aegisub_render.cutil import cdiv
+from aegisub_render._crt import cdiv
+from aegisub_render.cutil import try_parse_int
 
 
 @dataclass(slots=True)
@@ -114,8 +115,6 @@ class DummySpec:
 
 def parse_dummy(spec: str) -> DummySpec:
     """CreateDummyVideoProvider: ?dummy:fps:frames:width:height:r:g:b:pattern."""
-    from aegisub_render.cutil import try_parse_int
-
     if not spec.replace("\\", "/").startswith("?dummy"):
         raise ValueError("not a dummy video")
     toks = spec.replace("\\", "/")[7:].split(":")

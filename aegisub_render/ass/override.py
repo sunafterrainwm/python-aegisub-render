@@ -3,7 +3,8 @@
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
-from aegisub_render.cutil import atoi, mid, strtol_hex_prefix, trim
+from aegisub_render._crt import atoi, strtol_hex
+from aegisub_render.cutil import mid, trim
 
 
 class VarType(Enum):
@@ -173,7 +174,7 @@ class OverrideParam:
             return default
         if self.classification is ParamClass.ALPHA:
             pos = next((i for i, c in enumerate(self.value) if c in "0123456789abcdefABCDEF"), len(self.value))
-            return mid(0, strtol_hex_prefix(self.value[pos:]), 255)
+            return mid(0, strtol_hex(self.value[pos:]), 255)
         return atoi(self.value)
 
 

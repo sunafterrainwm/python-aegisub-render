@@ -3,6 +3,7 @@
 import bisect
 from dataclasses import dataclass, field
 
+from aegisub_render._crt import atoi, cdiv, wrap_int32
 from aegisub_render.ass.entries import (
     AssAttachment,
     AssDialogue,
@@ -11,7 +12,6 @@ from aegisub_render.ass.entries import (
     ExtradataEntry,
     ProjectProperties,
 )
-from aegisub_render.cutil import atoi, cdiv, wrap_int32
 
 
 @dataclass(slots=True)

@@ -12,7 +12,7 @@
 
 ## 需求
 
-- Windows x64（`text_extents` 用 GDI；兩個 Cython 擴充模組是為 CPython 3.14 / win_amd64 編譯的）
+- Windows x64（`text_extents` 用 GDI；Cython 擴充模組是為 CPython 3.14 / win_amd64 編譯的）
 - Python 3.14、[uv](https://docs.astral.sh/uv/)
 - Aegisub 3.5.0 安裝目錄（預設 `C:\Program Files\Aegisub`）
 
@@ -138,14 +138,19 @@ uv run ruff check
 
 ## 原生模組
 
-兩個 Cython 擴充模組，原始碼與編譯好的 `.pyd` 都在 repo 裡：
+三個 Cython 擴充模組，原始碼、編譯好的 `.pyd` 與 `.pyi` 都在 repo 裡：
 
 | 模組 | 內容 |
 |---|---|
 | `aegisub_render/lua/_luajit`（`.pyx` / `.pxd` / `.pyi`） | 靜態連結的 LuaJIT + lpeg + luabins + shim，以及 Python 綁定：`LuaState`、把 Python 函式變成 Lua C 函式的 dispatcher、`aegisub.re/unicode/lfs` 背後的 C 函式表 |
 | `aegisub_render/host/_gdi`（`.pyx` / `.pxd` / `.pyi`） | `text_extents` 用的 GDI 量測 |
+| `aegisub_render/_crt`（`.pyx` / `.pyi`） | Aegisub 依賴的 C 行為：`atoi`、`strtol`、`printf("%g"/"%f")`、double→整數的 C 轉型、int64 除法。直接用 MSVC UCRT 計算，而不是用 Python 模擬（例如 `atoi` 溢位時夾到 `INT_MAX`、`strtol` 接受 `0x`、`inf`/`nan` 的寫法） |
 
-`.pxd` 是 C 宣告（LuaJIT API、shim、windows.h），`.pyi` 給型別檢查器。Python 函式以真正的 `lua_CFunction`
+`.pxd` 是 C 宣告（LuaJIT API、shim、windows.h）。`.pyi` 是編譯時產生的：Cython 本身不會產生 stub，
+但 `.pyx` 開了 `embedsignature.format=python`，會把原始碼裡帶型別註解的簽名嵌進 docstring；
+`native/stubgen.py` 匯入編好的模組、把這些簽名還原成 `.pyi`（自動補上 import、用 ruff 排版），
+`native/build.py` 編譯後會自動執行，`tests/test_stubs.py` 則檢查 commit 的 stub 是否與 `.pyd` 一致。
+為此 `.pyx` 遵守幾個慣例：公開的 `def` 都有完整型別註解、property 一律唯讀、cdef class 的 `__init__` 要有 docstring。Python 函式以真正的 `lua_CFunction`
 提供給 Lua：呼叫 Python 的部分一定正常返回，若要報錯，回到沒有 Python 狀態的 C 函式後才 `lua_error`，
 因此 Lua 錯誤不會穿越持有 Python 狀態的 frame。比 ctypes 版快約 3 倍（`template syl`+`template char`、
 300 行 × 10 音節：2.83 s → 0.98 s，輸出逐位元組相同）。
@@ -159,8 +164,8 @@ uv run --group build python native/build.py
 根目錄的 `meson.build`（subproject 放在 `native/subprojects/`）照抄 Aegisub v3.5.0：`luajit.wrap`
 （同一個原始碼與 wrapdb patch 的 sha256）、`luabins/`、`libaegisub/lua/modules/lpeg.c`，選項與 Aegisub 相同
 （static、amalgam、lua52compat、release、動態 CRT）；`build.py` 會先檢查這些檔案的 sha256 與 v3.5.0 一致，
-編好後把 `.pyd` 複製進套件目錄。新增的只有 `native/src/shim.c`（限制記憶體的 allocator、panic handler、
-preload lpeg/luabins、照抄 `agi::lua::error`/`argerror` 的報錯函式）與兩個 Cython 模組。
+編好後把 `.pyd` 複製進套件目錄並重新產生 `.pyi`。新增的只有 `native/src/shim.c`（限制記憶體的 allocator、
+panic handler、preload lpeg/luabins、照抄 `agi::lua::error`/`argerror` 的報錯函式）與 Cython 模組。
 LuaJIT 官方不提供二進位檔，其他來源（MSYS2、conda-forge）的版本與編譯選項都和 Aegisub 不同。
 
 ## 與 Aegisub 的已知差異
