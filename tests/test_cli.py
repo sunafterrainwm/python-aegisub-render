@@ -170,6 +170,23 @@ def test_output_to_stdout(tmp_path: Path, settings: Settings) -> None:
     assert src.read_text(encoding="utf-8-sig") == TEMPLATE_ASS
 
 
+def test_links_that_were_not_loaded_are_kept(tmp_path: Path, settings: Settings) -> None:
+    """Unlike Aegisub, which drops them on save: here the video and audio files do not exist."""
+    garbage = "[Aegisub Project Garbage]\nAudio File: [A][01].mkv\nVideo File: D:\\nowhere\\v.mkv\n\n"
+    src = write(tmp_path / "in.ass", TEMPLATE_ASS.replace("[V4+ Styles]", garbage + "[V4+ Styles]"))
+    r = cli("render", str(src), "-o", str(tmp_path / "same.ass"))
+    assert r.returncode == 0, r.stderr
+    assert "linked video not found" in r.stderr
+    assert "\nAudio File: [A][01].mkv\nVideo File: D:\\nowhere\\v.mkv\n" in (tmp_path / "same.ass").read_text(
+        encoding="utf-8-sig"
+    )
+    (tmp_path / "sub").mkdir()
+    r = cli("render", str(src), "-o", str(tmp_path / "sub" / "out.ass"), "--no-video")
+    assert r.returncode == 0, r.stderr
+    text = (tmp_path / "sub" / "out.ass").read_text(encoding="utf-8-sig")
+    assert "\nAudio File: ../[A][01].mkv\nVideo File: D:/nowhere/v.mkv\n" in text
+
+
 def test_linked_paths_follow_the_output(tmp_path: Path, settings: Settings) -> None:
     """Project::SetSubtitlesFilename: relative paths are rewritten for where the file is saved."""
     (tmp_path / "kf.txt").write_text("# keyframe format v1\nfps 0\n0\n10\n", encoding="utf-8")

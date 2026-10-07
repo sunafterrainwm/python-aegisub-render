@@ -59,7 +59,8 @@ worker 行程 + 牆鐘逾時（預設 120 秒）、Lua heap 512,000,000 bytes、
 PyAV 讀取、快取於 `%TEMP%\aegisub-render\<sha256(絕對路徑)>.json`（以大小與 mtime 驗證）；CLI 可覆蓋。
 無影片時 `video_size`/`frame_from_ms`/`ms_from_frame` 回傳 nil、`keyframes` 回傳 `{}`（照原版）；
 `get_audio_selection` 拋出未實現錯誤。專案屬性照 `Project::UpdateRelativePaths` 與 `VideoController`
-在存檔時的結果改寫。
+在存檔時的結果改寫，但刻意不模仿一點：Aegisub 只寫出實際載入的檔案，所以找不到的影片／音訊等連結在存檔時會被刪掉；
+這裡沒能載入的連結（檔案不存在、`--no-video`、`--fps`）照原樣保留，存到別的目錄時才改寫相對路徑。
 
 ## 輸出
 

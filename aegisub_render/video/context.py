@@ -2,10 +2,12 @@
 
 Emulates "App/Auto/Load Linked Files" answering yes: every linked file that exists is loaded,
 in Aegisub's order (video, then timecodes, then keyframes, then audio), and the project
-properties are rewritten the way Project::UpdateRelativePaths and VideoController do it.
+properties are rewritten the way Project::UpdateRelativePaths and VideoController do it,
+except that links which could not be loaded are kept instead of dropped.
 """
 
 import math
+import os
 from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
 
@@ -180,8 +182,19 @@ def build_video_context(
 
     # Project::SetSubtitlesFilename -> UpdateRelativePaths (on save, relative to where it is saved)
     base = save_dir if save_dir is not None else script_dir
-    props.audio_file = _generic_relative(loaded_audio, base)
-    props.video_file = _generic_relative(loaded_video, base)
-    props.timecodes_file = _generic_relative(loaded_timecodes, base)
-    props.keyframes_file = _generic_relative(loaded_keyframes, base)
+    same_dir = os.path.normcase(base) == os.path.normcase(script_dir)
+
+    def saved_path(loaded: str, linked: str) -> str:
+        """Aegisub writes what is loaded, so a link it could not load is dropped. Here such a link
+        (a missing file, --no-video, --fps) is kept: verbatim, or rebased when saved elsewhere."""
+        if loaded:
+            return _generic_relative(loaded, base)
+        if not linked or same_dir or is_dummy_path(linked):
+            return linked
+        return _generic_relative(absolute(linked), base)
+
+    props.audio_file = saved_path(loaded_audio, props.audio_file)
+    props.video_file = saved_path(loaded_video, props.video_file)
+    props.timecodes_file = saved_path(loaded_timecodes, props.timecodes_file)
+    props.keyframes_file = saved_path(loaded_keyframes, props.keyframes_file)
     return ctx
