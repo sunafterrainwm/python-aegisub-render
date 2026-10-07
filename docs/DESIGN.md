@@ -46,6 +46,10 @@
 `getmetatable` 只對 table 有效；`load`/`loadstring` 只收文字；`string.dump` 封鎖；`collectgarbage` 只允許
 `count`/`collect`；`print` 導到 trace level 4。封鎖物以代理物件呈現，存取時拋出描述性錯誤。
 
+DependencyControl（`l0.DependencyControl` 及子模組）被「物理封印」：模組搜尋器在搜尋前就放棄，`require` 得到原生的
+module not found；include 目錄中對應的檔案對 `require`、`include()` 與腳本載入都不可見（比對不分大小寫）。
+以 `pcall(require, ...)` 載入它的腳本因此退回不用 DepCtrl 的模式。
+
 ## 限制
 
 worker 行程 + 牆鐘逾時（預設 120 秒）、Lua heap 512,000,000 bytes、產出行數 50,000、輸入行數 100,000。

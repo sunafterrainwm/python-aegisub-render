@@ -165,7 +165,7 @@ def case_basic_syl(case: Case) -> None:
 def case_line_and_preline(case: Case) -> None:
     case.style("Default")
     case.style("Sub", align=8)
-    case.comment("template pre-line", "{\\an$align\\fad(150,150)\\blur2}", style="Default")
+    case.comment("template pre-line", "{\\an!line.styleref.align!\\fad(150,150)\\blur2}", style="Default")
     case.comment("template line", "{\\an7\\pos($lleft,$ltop)\\1c&H00FFFF&}", style="Sub")
     lyric_lines(case, 3, ENGLISH)
     t = case.rng.randrange(20000, 25000, 10)

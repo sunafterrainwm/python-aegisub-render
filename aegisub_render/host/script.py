@@ -20,6 +20,37 @@ from aegisub_render.video.vfr import START
 
 BOOTSTRAP_CHUNKNAME = b"=aegisub-render"
 
+# Modules that do not exist as far as scripts can tell: require() reports them as not found
+# without looking for them, and their files under the include directories are invisible to
+# require, include() and script loading. DependencyControl (DepCtrl) needs package.loaders,
+# io and network access; scripts that load it with pcall(require, ...) fall back to running
+# without it. Deliberately not configurable.
+SEALED_MODULES: tuple[str, ...] = ("l0.DependencyControl",)
+
+
+def is_sealed_module(name: str) -> bool:
+    """`name` or one of its submodules is sealed (case-insensitive, like the file system)."""
+    folded = name.casefold()
+    return any(folded == m.casefold() or folded.startswith(m.casefold() + ".") for m in SEALED_MODULES)
+
+
+def is_sealed_path(path: str, include_dirs: list[str]) -> bool:
+    """`path` is the file of a sealed module inside one of the include directories."""
+    try:
+        target = Path(os.path.realpath(path))
+    except OSError:
+        return False
+    for d in include_dirs:
+        try:
+            rel = target.relative_to(Path(os.path.realpath(d)))
+        except OSError, ValueError:
+            continue
+        if rel.suffix.lower() in (".lua", ".moon"):
+            rel = rel.with_suffix("")
+        if rel.parts and is_sealed_module(".".join(rel.parts)):
+            return True
+    return False
+
 
 class RunStatus(StrEnum):
     OK = "ok"
@@ -110,6 +141,7 @@ class ScriptHost:
         support = Path(cfg.paths.decode("?data/automation/include/")) / "moonscript.lua"
         lua_cfg: dict[str, object] = {
             "include_dirs": cfg.include_dirs,
+            "sealed_modules": list(SEALED_MODULES),
             "script_dir": str(script.parent),
             "script_stem": script.stem,
             "pretty_name": script.name,
@@ -142,6 +174,8 @@ class ScriptHost:
 
         def read_file(path: object) -> tuple[bytes, str]:
             p = _str(path)
+            if is_sealed_path(p, self.cfg.include_dirs):
+                raise ScriptError(f"File not found: {p}")
             try:
                 canonical = os.path.realpath(p)
             except OSError:
@@ -159,7 +193,8 @@ class ScriptHost:
             return data, canonical
 
         def file_exists(path: object) -> bool:
-            return Path(_str(path)).is_file()
+            p = _str(path)
+            return Path(p).is_file() and not is_sealed_path(p, self.cfg.include_dirs)
 
         def path_join(base: object, name: object) -> str:
             return join(_str(base), _str(name))

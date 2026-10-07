@@ -259,8 +259,22 @@ local function split_semicolon(s)
 	end
 end
 
+-- Sealed modules (see SEALED_MODULES in host/script.py) do not exist: the searcher gives up
+-- before looking, so require() fails with its ordinary "module not found" error.
+local sealed_modules = cfg.sealed_modules
+
+local function is_sealed(name)
+	local lname = slower(name)
+	for _, m in ipairs(sealed_modules) do
+		local lm = slower(m)
+		if lname == lm or ssub(lname, 1, #lm + 1) == lm .. "." then return true end
+	end
+	return false
+end
+
 -- agi::lua::module_loader
 local function module_loader(name)
+	if is_sealed(name) then return end
 	local module = sgsub(name, "%.", "\\")
 	for _, tok in ipairs(split_semicolon(package_path)) do
 		local filename = sgsub(tok, "%?", function() return module end)

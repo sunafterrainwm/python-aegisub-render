@@ -14,7 +14,7 @@ Style: Sub,Segoe UI,36,&H00A8290A,&H0074B065,&H00DAA883,&H8021A231,0,0,0,0,100,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,template pre-line,{\an$align\fad(150,150)\blur2}
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,template pre-line,{\an!line.styleref.align!\fad(150,150)\blur2}
 Comment: 0,0:00:00.00,0:00:00.00,Sub,,0,0,0,template line,{\an7\pos($lleft,$ltop)\1c&H00FFFF&}
 Dialogue: 0,0:00:02.39,0:00:03.79,Default,,0,0,0,karaoke,{\k20}{\k10}the{\k40}me {\k30}night{\k10}with{\k30}you
 Dialogue: 0,0:00:04.48,0:00:06.08,Default,,0,0,0,karaoke,{\k10}{\k15}gain{\k20}a{\k10}a{\k40}with {\k25}for{\k20}to{\k20}the

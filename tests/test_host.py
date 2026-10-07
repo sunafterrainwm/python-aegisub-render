@@ -318,3 +318,36 @@ def test_limits(run_lua: RunLua, settings: Settings) -> None:
         settings.memory_limit_bytes = original_mem
     assert r.result.status == "error"
     assert "memory" in r.log
+
+
+def test_dependency_control_is_sealed(run_lua: RunLua, tmp_path: Path) -> None:
+    # fake DepCtrl files in the script directory (the first include directory)
+    (tmp_path / "l0" / "DependencyControl").mkdir(parents=True)
+    (tmp_path / "l0" / "DependencyControl.lua").write_text("return { fake = true }\n", encoding="utf-8")
+    (tmp_path / "l0" / "DependencyControl" / "Constants.lua").write_text("return {}\n", encoding="utf-8")
+    (tmp_path / "l0" / "Other.lua").write_text("return { ok = true }\n", encoding="utf-8")
+    r = run_lua(
+        macro(
+            """
+            local function missing(name)
+                local ok, err = pcall(require, name)
+                check(not ok, name .. " must not load")
+                return err
+            end
+            local real = missing("no.such.module")
+            local sealed = missing("l0.DependencyControl")
+            check(sealed == real:gsub("no%.such%.module", "l0.DependencyControl"), sealed)
+            missing("l0.DependencyControl.Constants")
+            missing("L0.DEPENDENCYCONTROL")
+            missing("l0/DependencyControl")
+            local ok, err = pcall(include, "l0/DependencyControl.lua")
+            check(not ok and tostring(err):find("Lua include not found: l0/DependencyControl.lua", 1, true), tostring(err))
+            check(require("l0.Other").ok, "other modules still load")
+            local have_depctrl = pcall(require, "l0.DependencyControl")
+            check(not have_depctrl, "the usual fallback pattern sees no DepCtrl")
+            aegisub.debug.out(0, "%s\\n", sealed)
+            """
+        )
+    )
+    assert r.result.status == "ok", r.log
+    assert r.log == "module 'l0.DependencyControl' not found:\n\tno field package.preload['l0.DependencyControl']\n"

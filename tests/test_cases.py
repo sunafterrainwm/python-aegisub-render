@@ -67,3 +67,18 @@ def test_case(case: Path, settings: Settings) -> None:
     reference = AEGISUB / case.name
     if reference.exists():
         assert without_gui_state(first) == without_gui_state(reference.read_bytes())
+
+
+def test_unknown_variable_warnings_match_aegisub(tmp_path: Path, settings: Settings) -> None:
+    """The original 02-line-preline used `$align`, which kara-templater does not define; Aegisub 3.5.0
+    logged this exact text once per karaoke line and still produced output."""
+    case = CASES[1]
+    old = r"{\an$align\fad(150,150)\blur2}"
+    new = r"{\an!line.styleref.align!\fad(150,150)\blur2}"
+    src = tmp_path / case.name
+    data = case.read_bytes()
+    assert new.encode() in data
+    src.write_bytes(data.replace(new.encode(), old.encode()))
+    _, log = render_case(src, settings)
+    warning = f"Unknown variable name: align\nIn karaoke template: {old}\n\n"
+    assert log == warning * 3

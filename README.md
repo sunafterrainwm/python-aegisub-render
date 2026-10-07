@@ -102,6 +102,11 @@ assert code is ExitCode.OK
 - ffi：從檔案載入的程式碼（腳本本身、include/autoload 目錄裡的模組，如 Yutils）可以 `require "ffi"`；
   執行期編譯的程式碼（`loadstring`，例如 kara-templater 的模板程式碼）不行。判斷依據是函式環境，所以尾呼叫繞不過去。
 - `aegisub.lfs` 照原樣可用；`aegisub.clipboard` 呼叫時報「unreachable」。
+- DependencyControl（`l0.DependencyControl` 與其子模組）被封印，對腳本而言它不存在：`require` 不做任何搜尋就回報
+  LuaJIT 原本的「module not found」錯誤（與真的不存在的模組逐字相同，大小寫不同也一樣）；它在 include 目錄裡的檔案
+  對 `require`（包括 `l0/DependencyControl` 這種斜線寫法）、`include()` 與腳本載入都不可見。以
+  `pcall(require, "l0.DependencyControl")` 載入的腳本（Aegisub-Motion、ILL、clipper2…）因此會退回不用 DepCtrl 的模式；
+  直接 `require` 的腳本則在載入時失敗。這份清單寫死在 `host/script.py` 的 `SEALED_MODULES`，不提供設定。
 
 ## 資源限制
 
@@ -171,7 +176,7 @@ LuaJIT 官方不提供二進位檔，其他來源（MSYS2、conda-forge）的版
 ## 與 Aegisub 的已知差異
 
 - 沒有 GUI：對話框（`aegisub.dialog.*`）、音訊無法使用。
-- 需要 `package`/`io` 才能運作的函式庫（DependencyControl 與依賴它的腳本，如 Aegisub-Motion）在沙箱中無法載入。
+- 需要 `package`/`io`/`debug.getinfo` 才能運作的函式庫在沙箱中無法使用；DependencyControl 被刻意封印（見「沙箱」）。
 - 開啟影片時 Aegisub 可能跳出詢問並修改 PlayRes / YCbCr Matrix / LayoutRes，這部分不重現。
 - 字元編碼只接受 UTF-8（可有 BOM）與帶 BOM 的 UTF-16，不做 Aegisub 的編碼偵測。
 - `aegisub.re` 以 Python `regex` 模擬 boost::u32regex（perl 語法、預設多行與 `.` 匹配換行）；罕見語法可能有差異。
