@@ -981,7 +981,6 @@ end
 local function remove_progress_sink()
 	aegisub.progress = nil
 	aegisub.debug = nil
-	P.progress_done()
 end
 
 ------------------------------------------------------------------------------ host entry points (called from Python)

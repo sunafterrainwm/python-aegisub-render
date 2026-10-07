@@ -217,9 +217,6 @@ class ScriptHost:
         def progress_title(text: object) -> None:
             out.progress(title=_str(text))
 
-        def progress_done() -> None:
-            out.progress_done()
-
         def text_extents(entry: object, text: object) -> tuple[float, float, float, float]:
             style = entry_from_flat(as_flat(entry), self.ass)
             if not isinstance(style, AssStyle):
@@ -327,7 +324,6 @@ class ScriptHost:
             "progress_set": progress_set,
             "progress_task": progress_task,
             "progress_title": progress_title,
-            "progress_done": progress_done,
             "text_extents": text_extents,
             "frame_from_ms": frame_from_ms,
             "ms_from_frame": ms_from_frame,

@@ -60,11 +60,12 @@ uv run aegisub-render.py list in.ass --script kara-templater.lua
 | `--aegisub-root DIR`、`--load-appdata` / `--no-load-appdata` | 覆蓋 `config.py` 的 `AEGISUB_ROOT`、`LOAD_APPDATA` |
 | `-o`/`--output PATH` | 輸出檔；省略時覆寫輸入檔；`-` 表示寫到 stdout（與寫檔時逐位元組相同；檔名真的是 `-` 時寫 `./-`）。連結檔案（影片、時間碼、關鍵影格、音訊）的相對路徑會改成相對於輸出檔所在的目錄，與 Aegisub 另存新檔相同；寫到 stdout 時相對於輸入檔 |
 | `-y`/`--override`、`-n`/`--no-override` | `--output` 檔案已存在時直接覆寫 / 不覆寫並以錯誤結束（不會執行腳本）；預設詢問，stdin 不是終端機時視為不覆寫。沒有 `--output`、`--output -` 或 `--dry-run` 時不起作用 |
-| `--dry-run` | 不寫任何東西（包括 `--output -` 的 stdout），改把輸入檔到結果的 unified diff 印到 stderr；`;` 開頭的行（註解與 header）不列入比較；即使 `-q` 也會印 |
+| `--dry-run` | 不寫任何東西（包括 `--output -` 的 stdout），改把輸入檔到結果的 unified diff 印到 stderr；`;` 開頭的行（註解與 header）不列入比較，沒有差異時印 `No differences found.`；即使 `-q` 也會印 |
 | `--macro NAME` / `--filter NAME` | 要執行的巨集（預設 `Apply karaoke template`，之後像存檔一樣寫出）或匯出濾鏡（像 File → Export 一樣寫出：輸入檔沒有的 `[Aegisub Project Garbage]`、`[Aegisub Extradata]` 不會寫出，有的則照存檔的方式保留） |
 | `--select 1,3-5` | 選取的對白行（1 起算，只算 Dialogue/Comment 行）；預設全選 |
 | `--force` | 巨集的 validation 函式回傳 false 時仍然執行 |
 | `--trace-level N`、`-v`、`-q` | `aegisub.debug.out` 的門檻（預設 3，同 Aegisub）；`-q` 只留錯誤與腳本輸出 |
+| `--no-progress` | 不顯示進度條。stderr 是終端機時，巨集或濾鏡執行期間會在 stderr 顯示 tqdm 進度條（標題是巨集名稱，後面接 `aegisub.progress.task` 的文字），結束後留在畫面上：成功時填滿到 100%，失敗時停在當時的進度；腳本的輸出印在進度條上方 |
 | `--timeout`、`--memory-limit`、`--max-output-lines`、`--max-input-lines` | 覆蓋資源限制 |
 | `--font-dir DIR` | 額外字型目錄（以 `FR_PRIVATE` 暫時註冊給 `text_extents`），可重複 |
 | `--video PATH` / `--no-video` | 覆蓋專案的 Video File（也接受 `?dummy:...`）/ 當作沒有影片 |

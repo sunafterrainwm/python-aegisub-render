@@ -73,7 +73,11 @@ Project Garbage 與 Extradata，也不做 `CleanExtradata`（`{=id}` 標記仍�
 儲存位置；執行腳本時的 `?script` 仍是輸入檔所在目錄（Aegisub 也是存檔時才改）。`--output` 已存在時預設詢問
 （像 ffmpeg 的 `-y`/`-n`），在執行腳本前就決定。`--output -` 把同樣的位元組寫到 stdout（不檢查覆寫）。`--dry-run`
 什麼都不寫，改印 diff 到 stderr：以輸入檔為舊版、結果為新版，比較前先拿掉 `;` 開頭的行，hunk 標頭仍標示完整檔案中
-的行號。
+的行號；沒有差異時印 `No differences found.`。
+
+Aegisub 執行巨集或濾鏡時開的進度對話框，在這裡是 worker 行程裡的 tqdm 進度條（只在 stderr 是終端機時）：標題是巨集／
+濾鏡名稱（同 `LuaThreadedCall` 的對話框標題），`aegisub.progress.title/task/set` 更新標題、尾端文字與百分比。腳本輸出
+先清掉進度條再印、印完重畫；輸出停在行中間時暫不重畫，以免蓋掉那一行。執行結束後進度條留在畫面上，成功時補到 100%。
 
 ## 測試
 

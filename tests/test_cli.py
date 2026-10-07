@@ -130,6 +130,15 @@ def test_dry_run(tmp_path: Path, settings: Settings) -> None:
     assert sorted(p.name for p in tmp_path.iterdir()) == ["in.ass", "out.ass"]
 
 
+def test_dry_run_without_differences(tmp_path: Path, settings: Settings) -> None:
+    """Applying the templates again to their own result changes nothing."""
+    src = write(tmp_path / "in.ass", TEMPLATE_ASS)
+    assert cli("render", str(src)).returncode == 0
+    r = cli("render", str(src), "--dry-run", "-q")
+    assert r.returncode == 0, r.stderr
+    assert r.stderr == "No differences found.\n"
+
+
 def test_output_to_stdout(tmp_path: Path, settings: Settings) -> None:
     src = write(tmp_path / "in.ass", TEMPLATE_ASS)
     out = tmp_path / "out.ass"

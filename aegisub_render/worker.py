@@ -125,6 +125,7 @@ def execute(job: Job, out: Output | None = None) -> Result:
             if flt is None:
                 available = ", ".join(repr(f.name) for f in info.filters) or "(none)"
                 return Result("error", f"script has no export filter named {job.filter!r}; available: {available}")
+            out.progress_begin(flt.name)
             status = host.run_filter(flt)
         else:
             macro = _pick_macro(info, job.macro or "")
@@ -135,7 +136,9 @@ def execute(job: Job, out: Output | None = None) -> Result:
                     f"the validation function of macro {macro.name!r} returned false "
                     "(Aegisub would grey it out); use --force to run it anyway",
                 )
+            out.progress_begin(macro.name)
             status = host.run_macro(macro, rows, active)
+        out.progress_end(complete=status is RunStatus.OK)
 
         result = Result(str(status), memory_peak=host.state.memory_peak, memory_limit_hit=host.state.memory_limit_hit)
         if status is RunStatus.OK:
@@ -148,7 +151,7 @@ def execute(job: Job, out: Output | None = None) -> Result:
     except LuaError as e:
         return Result("error", f"aegisub-render: unexpected Lua error in the host: {e.message}")
     finally:
-        out.progress_done()
+        out.progress_end(complete=False)
         out.finish_line()
         if host is not None:
             host.close()
