@@ -82,8 +82,8 @@ def entry_from_flat(flat: Flat, ass: AssFile) -> AssEntry:
         d.margin = [_i(flat[7]), _i(flat[8]), _i(flat[9])]
         d.effect = _s(flat[10])
         d.text = _s(flat[11])
-        extra = flat[12] if len(flat) > 12 else False
-        if isinstance(extra, dict):
+        extra: object = flat[12] if len(flat) > 12 else False
+        if extra is not False:
             kv = as_flat(extra)
             ids = [ass.add_extradata(_s(kv[i]), _s(kv[i + 1])) for i in range(0, len(kv) - 1, 2)]
             d.extradata_ids = sorted(ids)
@@ -157,15 +157,52 @@ class SubsSession:
             extra: list[str] = []
             for ed in self.ass.get_extradata(e.extradata_ids):
                 extra += (ed.key, ed.value)
-            return ("dialogue", section, e.entry_data(), e.comment, e.layer, time_int(e.start), time_int(e.end),
-                    e.style, e.actor, e.effect, e.margin[0], e.margin[1], e.margin[2], e.text, extra)
+            return (
+                "dialogue",
+                section,
+                e.entry_data(),
+                e.comment,
+                e.layer,
+                time_int(e.start),
+                time_int(e.end),
+                e.style,
+                e.actor,
+                e.effect,
+                e.margin[0],
+                e.margin[1],
+                e.margin[2],
+                e.text,
+                extra,
+            )
         s = e
-        return ("style", section, s.entry_data(), s.name, s.font, s.fontsize,
-                s.primary.ass_style() + "&", s.secondary.ass_style() + "&",
-                s.outline.ass_style() + "&", s.shadow.ass_style() + "&",
-                s.bold, s.italic, s.underline, s.strikeout, s.scalex, s.scaley, s.spacing, s.angle,
-                s.borderstyle, s.outline_w, s.shadow_w, s.alignment,
-                s.margin[0], s.margin[1], s.margin[2], s.encoding)
+        return (
+            "style",
+            section,
+            s.entry_data(),
+            s.name,
+            s.font,
+            s.fontsize,
+            s.primary.ass_style() + "&",
+            s.secondary.ass_style() + "&",
+            s.outline.ass_style() + "&",
+            s.shadow.ass_style() + "&",
+            s.bold,
+            s.italic,
+            s.underline,
+            s.strikeout,
+            s.scalex,
+            s.scaley,
+            s.spacing,
+            s.angle,
+            s.borderstyle,
+            s.outline_w,
+            s.shadow_w,
+            s.alignment,
+            s.margin[0],
+            s.margin[1],
+            s.margin[2],
+            s.encoding,
+        )
 
     def assign(self, idx: int, flat: Flat) -> None:
         e = entry_from_flat(flat, self.ass)
@@ -234,8 +271,16 @@ class SubsSession:
         start = time_int(e.start)
         result: list[list[object]] = []
         for syl in parse_karaoke_syllables(e):
-            result.append([syl.duration, syl.start_time - start, syl.start_time + syl.duration - start,
-                           syl.tag_type, syl.get_text(False), syl.text])
+            result.append(
+                [
+                    syl.duration,
+                    syl.start_time - start,
+                    syl.start_time + syl.duration - start,
+                    syl.tag_type,
+                    syl.get_text(False),
+                    syl.text,
+                ]
+            )
         return result
 
     def undo_point(self) -> None:

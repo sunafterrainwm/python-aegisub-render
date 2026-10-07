@@ -1,0 +1,199 @@
+"""ASS model, parser and writer (ports of Aegisub's C++)."""
+
+import pytest
+
+from aegisub_render.ass.codec import inline_string_decode, inline_string_encode, uudecode, uuencode
+from aegisub_render.ass.color import Color
+from aegisub_render.ass.entries import AssDialogue, AssStyle, SubtitleFormatParseError
+from aegisub_render.ass.karaoke import parse_karaoke_syllables
+from aegisub_render.ass.override import OverrideTag
+from aegisub_render.ass.parser import decode_subtitle_bytes, parse_ass_lines
+from aegisub_render.ass.time import ass_formatted, parse_time, time_int
+from aegisub_render.ass.writer import serialize_ass
+
+
+@pytest.mark.parametrize(
+    ("text", "rgba"),
+    [
+        ("&H00FFFFFF", (255, 255, 255, 0)),
+        ("&H80112233", (0x33, 0x22, 0x11, 0x80)),
+        ("&HFFFFFF&", (255, 255, 255, 0)),
+        ("&H00FFFFFF&", (255, 255, 255, 0)),
+        ("H112233", (0x33, 0x22, 0x11, 0)),
+        ("16777215", (255, 255, 255, 0)),
+        ("-1", (255, 255, 255, 255)),
+        ("#FF8000", (255, 128, 0, 0)),
+        ("#F80", (255, 136, 0, 0)),
+        ("rgb(1, 2, 3)", (1, 2, 3, 0)),
+        ("rgba(1,2,3,4)", (1, 2, 3, 4)),
+        ("12AB34CD", (12, 0, 0, 0)),  # int_ matched a prefix, so its semantic action already ran
+        ("&Hnope", (0, 0, 0, 0)),
+    ],
+)
+def test_color_parse(text: str, rgba: tuple[int, int, int, int]) -> None:
+    c = Color.parse(text)
+    assert (c.r, c.g, c.b, c.a) == rgba
+
+
+def test_color_format() -> None:
+    c = Color(1, 2, 3, 4)
+    assert c.ass_style() == "&H04030201"
+    assert c.ass_override() == "&H030201&"
+
+
+def test_time() -> None:
+    assert parse_time("0:00:01.23") == 1230
+    assert parse_time("1:02:03.456") == 3723456
+    assert parse_time("1:2") == 62000
+    assert parse_time("99:00:00.00") == 10 * 3600 * 1000 - 6
+    assert time_int(1234) == 1230
+    assert time_int(1235) == 1240
+    assert ass_formatted(1235) == "0:00:01.24"
+    assert ass_formatted(3723456, ms_precision=True) == "1:02:03.456"
+
+
+def test_dialogue_round_trip() -> None:
+    raw = "Dialogue: 2,0:00:01.00,0:00:02.50,Sty,Act,0001,0,10,fx,{=3=5}some, text"
+    d = AssDialogue.parse(raw)
+    assert (d.layer, d.start, d.end, d.style, d.actor, d.margin, d.effect) == (
+        2,
+        1000,
+        2500,
+        "Sty",
+        "Act",
+        [1, 0, 10],
+        "fx",
+    )
+    assert d.extradata_ids == [3, 5]
+    assert d.text == "some, text"
+    assert d.entry_data() == "Dialogue: 2,0:00:01.00,0:00:02.50,Sty,Act,1,0,10,fx,{=3=5}some, text"
+    d.style = "a,b"
+    d.text = "x\ny"
+    assert d.entry_data() == "Dialogue: 2,0:00:01.00,0:00:02.50,a;b,Act,1,0,10,fx,{=3=5}xy"
+    c = AssDialogue.parse("Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,,")
+    assert c.comment and c.text == ""
+    with pytest.raises(SubtitleFormatParseError):
+        AssDialogue.parse("Dialogue: 0,0:00:00.00")
+
+
+def test_style_round_trip() -> None:
+    raw = "Style: A,Arial,48.5,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,95.5,0,0,1,2,1.5,8,10,20,30,128"
+    s = AssStyle.parse(raw)
+    assert s.bold and not s.italic and s.fontsize == 48.5 and s.scaley == 95.5 and s.alignment == 8
+    assert s.entry_data() == raw
+    with pytest.raises(SubtitleFormatParseError, match="too many fields"):
+        AssStyle.parse(raw + ",1")
+
+
+def test_parser_and_writer() -> None:
+    text = "\n".join(
+        [
+            "﻿[Script Info]",
+            "; a comment that Aegisub drops",
+            "Title: x",
+            "ScriptType: v4.00+",
+            "Collisions: Normal",
+            "PlayResX: 640",
+            "",
+            "[Aegisub Project Garbage]",
+            "Video File: video.mkv",
+            "Video AR Value: 1.777778",
+            "Active Line: 3",
+            "Automation Settings foo: bar",
+            "",
+            "[V4+ Styles]",
+            "Format: whatever",
+            "Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1",
+            "",
+            "[Some Unknown Section]",
+            "dropped: yes",
+            "",
+            "[Events]",
+            "Format: whatever",
+            "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,{=1}hello   ",
+            "",
+            "[Aegisub Extradata]",
+            "Data: 1,key,evalue#3Awith#2Cescapes",
+        ]
+    )
+    ass = parse_ass_lines(decode_subtitle_bytes(text.encode("utf-8")))
+    assert [i.key for i in ass.info] == ["Title", "ScriptType", "PlayResX"]
+    assert ass.properties.video_file == "video.mkv"
+    assert ass.properties.active_row == 3
+    assert ass.properties.automation_settings == {" foo": "bar"}
+    assert ass.events[0].text == "{=1}hello"[4:] and ass.events[0].extradata_ids == [1]
+    assert ass.extradata[0].value == "value:with,escapes"
+    assert ass.get_resolution() == (640, 480)
+
+    out = serialize_ass(ass)
+    assert out.startswith(
+        b"\xef\xbb\xbf[Script Info]\r\n; Script generated by Aegisub 3.5.0\r\n; https://aegisub.org/\r\n"
+    )
+    assert b"\n" not in out.replace(b"\r\n", b"")
+    lines = out.decode("utf-8-sig").split("\r\n")
+    assert lines[3:6] == ["Title: x", "ScriptType: v4.00+", "PlayResX: 640"]
+    assert lines[6:11] == [
+        "",
+        "[Aegisub Project Garbage]",
+        "Video File: video.mkv",
+        "Video AR Value: 1.777778",
+        "Active Line: 3",
+    ]
+    assert "Data: 1,key,evalue#3Awith#2Cescapes" in lines
+    assert "[Some Unknown Section]" not in lines
+    without_ui = serialize_ass(ass, save_ui_state=False).decode("utf-8-sig")
+    assert "Active Line" not in without_ui
+
+
+def test_attachments_survive() -> None:
+    data = bytes(range(256)) * 3
+    encoded = uuencode(data, True)
+    assert uudecode(encoded) == data
+    lines = ["[Fonts]", "fontname: a_0.ttf", *encoded.split("\r\n"), "", "[Events]"]
+    ass = parse_ass_lines(lines)
+    assert len(ass.attachments) == 1
+    assert ass.attachments[0].filename == "a_0.ttf"
+    assert uudecode(ass.attachments[0].data.split("\r\n", 1)[1]) == data
+
+
+def test_inline_string_codec() -> None:
+    s = "a,b:c|d#e\x01"
+    assert inline_string_encode(s) == "a#2Cb#3Ac#7Cd#23e#01"
+    assert inline_string_decode(inline_string_encode(s)) == s
+
+
+@pytest.mark.parametrize(
+    ("tag", "normalized"),
+    [
+        ("\\fs 20 ", "\\fs20"),
+        ("\\fs(20)", "\\fs20"),
+        ("\\pos( 1 , 2 )", "\\pos(1,2)"),
+        ("\\pos", "\\pos()"),
+        ("\\t(\\fs20)", "\\t(\\fs20)"),
+        ("\\t(0,100,\\fs20)", "\\t(0,100,\\fs20)"),
+        ("\\t(0,100,2,\\fs20)", "\\t(0,100,2,\\fs20)"),
+        ("\\clip(m 0 0 l 1 1)", "\\clip(m 0 0 l 1 1)"),
+        ("\\clip(1,2,3,4)", "\\clip(1,2,3,4)"),
+        ("\\-fx", "\\-fx"),
+    ],
+)
+def test_override_tag_normalization(tag: str, normalized: str) -> None:
+    assert str(OverrideTag(tag)) == normalized
+
+
+def test_karaoke_syllables() -> None:
+    d = AssDialogue.parse(
+        "Dialogue: 0,0:00:01.00,0:00:05.00,Default,,0,0,0,,{\\fad(1,2)}{\\k20}a{\\k30\\fs 20}b{\\K10}c{note}d{\\kf5\\-x}e"
+    )
+    syls = parse_karaoke_syllables(d)
+    assert [(s.tag_type, s.start_time, s.duration, s.text) for s in syls] == [
+        ("\\k", 1000, 200, "a"),
+        ("\\k", 1200, 300, "b"),
+        ("\\kf", 1500, 100, "cd"),
+        ("\\kf", 1600, 50, "e"),
+    ]
+    assert syls[0].get_text(False) == "{\\fad(1,2)}a"
+    assert syls[1].get_text(False) == "{\\fs20}b"
+    assert syls[2].get_text(False) == "c{note}d"
+    assert syls[3].get_text(False) == "{\\-x}e"
+    assert syls[1].get_text(True) == "{\\k30}{\\fs20}b"

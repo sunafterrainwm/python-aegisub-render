@@ -1,0 +1,21 @@
+﻿[Script Info]
+Title: aegisub-render test case 07-inline-fx
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Segoe UI,72,&H00C5F9F0,&H00FCBC33,&H0092EB95,&H80C4E4E3,0,0,0,0,100,100,0,0,1,3,1,3,40,40,50,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,template syl fx big,{\an5\pos($scenter,$smiddle)\t($start,$end,\fscx150\fscy150)}
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,template syl fx spin,{\an5\pos($scenter,$smiddle)\t($start,$end,\frz360)}
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,template syl,{\an5\pos($scenter,!$smiddle+40!)\alpha&HA0&}
+Dialogue: 0,0:00:02.96,0:00:04.91,Default,,0,0,0,karaoke,{\k20}{\k25\-big}ne{\k60}sa {\k10}ka {\k60}su{\k20\-big}to
+Dialogue: 0,0:00:05.49,0:00:08.59,Default,,0,0,0,karaoke,{\k30}{\k30\-big}ra{\k60}ka{\k10}chi{\k60}chi{\k60}ka{\k40}hi {\k20}su
+Dialogue: 0,0:00:10.06,0:00:12.61,Default,,0,0,0,karaoke,{\k10}{\k15}mi{\k25}su{\k20\-big}ze {\k15}ne{\k60\-big}yo {\k50}wa{\k60\-big}ra

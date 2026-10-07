@@ -34,22 +34,25 @@ packages = ["src/aegisub_render"]
 default-groups = ["dev"]
 
 [tool.ruff]
-line-length = 110
+line-length = 120
 target-version = "py314"
 extend-exclude = ["reference", "native/subprojects"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "PL", "PT", "ANN", "TID"]
 ignore = [
-    "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004",
-    "SIM108", "RUF001", "RUF002", "RUF003",
+    "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR0917", "PLR2004", "PLW2901",
+    "SIM108", "SIM105", "SIM113", "RUF001", "RUF002", "RUF003",
+    "UP031",    # %-formatting is used on purpose where it reproduces C printf output
+    "PLC0415",  # PyAV is imported lazily: it is only needed when a real video is probed
 ]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "__future__.annotations".msg = "Banned: this project relies on Python 3.14 deferred annotations (PEP 649/749)"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["ANN", "PLR"]
+"tests/**" = ["ANN", "PLR", "PT018", "E501"]
+"scripts/gen_cases.py" = ["E501"]  # template lines are data
 
 [tool.basedpyright]
 pythonVersion = "3.14"
@@ -64,4 +67,6 @@ reportPrivateUsage = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+# LuaJIT raises every Lua error (even ones caught by pcall) as a Windows SEH exception with code
+# 0xE24C4A0x; pytest's faulthandler plugin would print a "fatal exception" report for each one.
+addopts = "-ra -p no:faulthandler"

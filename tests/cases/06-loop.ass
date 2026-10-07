@@ -1,0 +1,19 @@
+﻿[Script Info]
+Title: aegisub-render test case 06-loop
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Microsoft JhengHei,72,&H0068D1DA,&H006DC665,&H004191EF,&H802F7C64,0,0,0,0,100,100,0,0,1,1,1,7,20,10,50,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,code once,math.randomseed(3003)
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,template syl loop 4,{\an5\move($scenter,$smiddle,!$scenter+math.random(-40,40)!,!$smiddle+math.random(-40,40)!,$start,$end)\alpha&H!string.format('%02X', 40*j)!&\blur!j!}
+Dialogue: 0,0:00:01.93,0:00:03.18,Default,,0,0,0,karaoke,{\k20}na {\k15}ki{\k40}ki{\k50}ze
+Dialogue: 0,0:00:03.79,0:00:07.19,Default,,0,0,0,karaoke,{\k30}{\k20}yo{\k60}ru{\k30}ri{\k40}yo{\k40}ri{\k60}chi{\k60}chi

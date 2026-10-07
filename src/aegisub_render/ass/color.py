@@ -15,12 +15,12 @@ class Color:
     a: int = 0
 
     @staticmethod
-    def from_abgr(v: int) -> "Color":
+    def from_abgr(v: int) -> Color:
         v &= 0xFFFFFFFF
         return Color(v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF, (v >> 24) & 0xFF)
 
     @staticmethod
-    def parse(text: str) -> "Color":
+    def parse(text: str) -> Color:
         """agi::Color(std::string_view): parse with the boost::spirit grammar, keeping whatever
         the grammar's semantic actions assigned even when the full parse fails."""
         dst = Color()

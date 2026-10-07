@@ -5,6 +5,7 @@ import os
 import runpy
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 from aegisub_render.paths import AegisubPaths
 
@@ -64,19 +65,25 @@ def load_settings(explicit: Path | None = None) -> Settings:
     for name, (attr, types) in _FIELDS.items():
         if name not in namespace:
             continue
-        value = namespace[name]
-        if isinstance(value, bool) and bool not in types:
-            raise ConfigError(f"{path}: {name} must be {' or '.join(t.__name__ for t in types)}")
-        if not isinstance(value, types):
-            raise ConfigError(f"{path}: {name} must be {' or '.join(t.__name__ for t in types)}, "
-                              f"got {type(value).__name__}")
-        if attr == "aegisub_root":
-            value = Path(value)
-        elif attr == "font_dirs":
-            value = [Path(v) for v in value]  # pyright: ignore[reportUnknownVariableType]
-        elif attr == "timeout_seconds":
-            value = float(value)
-        setattr(settings, attr, value)
+        value: object = namespace[name]
+        wanted = " or ".join(t.__name__ for t in types)
+        if (isinstance(value, bool) and bool not in types) or not isinstance(value, types):
+            raise ConfigError(f"{path}: {name} must be {wanted}, got {type(value).__name__}")
+        match attr:
+            case "aegisub_root":
+                assert isinstance(value, (str, Path))
+                settings.aegisub_root = Path(value)
+            case "font_dirs":
+                assert isinstance(value, list)
+                items: list[object] = value  # pyright: ignore[reportUnknownVariableType]
+                if not all(isinstance(v, (str, Path)) for v in items):
+                    raise ConfigError(f"{path}: FONT_DIRS must be a list of paths")
+                settings.font_dirs = [Path(str(v)) for v in items]
+            case "timeout_seconds":
+                assert isinstance(value, (int, float))
+                settings.timeout_seconds = float(value)
+            case _:
+                setattr(settings, attr, value)
     settings.source = path
     return settings
 
@@ -98,18 +105,19 @@ def read_aegisub_options(paths: AegisubPaths) -> AegisubOptions:
         return opts
     try:
         data = json.loads((Path(user) / "config.json").read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return opts
     if not isinstance(data, dict):
         return opts
 
     def get(*keys: str) -> object:
-        cur: object = data
+        cur = cast(object, data)
         for k in keys:
             if not isinstance(cur, dict):
                 return None
-            cur = cur.get(k)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-        return cur  # pyright: ignore[reportUnknownVariableType]
+            table: dict[str, object] = cur  # pyright: ignore[reportUnknownVariableType]
+            cur = table.get(k)
+        return cur
 
     include = get("Path", "Automation", "Include")
     if isinstance(include, str):

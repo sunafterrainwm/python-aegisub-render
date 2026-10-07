@@ -35,7 +35,7 @@ class Framerate:
     # -- constructors
 
     @staticmethod
-    def from_fps(fps: float) -> "Framerate":
+    def from_fps(fps: float) -> Framerate:
         if not math.isfinite(fps) or fps < 0:
             raise FramerateError("FPS must be greater than zero")
         if fps > 1000:
@@ -47,7 +47,7 @@ class Framerate:
         return f
 
     @staticmethod
-    def from_ratio(numerator: int, denominator: int, drop: bool = True) -> "Framerate":
+    def from_ratio(numerator: int, denominator: int, drop: bool = True) -> Framerate:
         if numerator <= 0 or denominator <= 0:
             raise FramerateError("Numerator and denominator must both be greater than zero")
         if numerator // denominator > 1000:
@@ -60,7 +60,7 @@ class Framerate:
         return f
 
     @staticmethod
-    def from_timecodes(timecodes: list[int]) -> "Framerate":
+    def from_timecodes(timecodes: list[int]) -> Framerate:
         f = Framerate()
         f.timecodes = list(timecodes)
         f._set_from_timecodes()
@@ -82,7 +82,7 @@ class Framerate:
         self.last = (len(self.timecodes) - 1) * self.denominator * 1000
 
     @staticmethod
-    def from_file(path: Path) -> "Framerate":
+    def from_file(path: Path) -> Framerate:
         text = path.read_bytes().decode("utf-8", "replace")
         lines = [ln.removesuffix("\r") for ln in text.split("\n")]
         if not lines:
@@ -125,9 +125,12 @@ class Framerate:
             return _i32(cdiv(cdiv(ms * self.numerator, self.denominator) - 999, 1000))
         if ms > self.timecodes[-1]:
             return _i32(
-                cdiv((ms + 1) * self.numerator - self.last - cdiv(self.numerator, 2) + (1000 * self.denominator - 1),
-                     1000 * self.denominator)
-                + len(self.timecodes) - 2
+                cdiv(
+                    (ms + 1) * self.numerator - self.last - cdiv(self.numerator, 2) + (1000 * self.denominator - 1),
+                    1000 * self.denominator,
+                )
+                + len(self.timecodes)
+                - 2
             )
         # distance(lower_bound(rbegin, rend, ms, greater<int>()), rend) - 1
         # == number of timecodes <= ms, minus one
@@ -148,8 +151,9 @@ class Framerate:
             return _i32(cdiv(frame * self.denominator * 1000, self.numerator))
         if frame >= len(self.timecodes):
             frames_past_end = frame - len(self.timecodes) + 1
-            return _i32(cdiv(frames_past_end * 1000 * self.denominator + self.last + cdiv(self.numerator, 2),
-                             self.numerator))
+            return _i32(
+                cdiv(frames_past_end * 1000 * self.denominator + self.last + cdiv(self.numerator, 2), self.numerator)
+            )
         return self.timecodes[frame]
 
 

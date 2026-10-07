@@ -1,0 +1,23 @@
+﻿[Script Info]
+Title: aegisub-render test case 05-code-lines
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Segoe UI,42,&H00BBAC39,&H00B17471,&H00DFD341,&H80B99629,0,0,0,0,100,100,0,0,1,1,1,1,10,40,30,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,code once,math.randomseed(2002); palette = { '&H3030FF&', '&H30FF30&', '&HFF3030&', '&H30FFFF&' }
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,code line,linecolor = palette[(line.i % #palette) + 1]
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,code syl,sylrot = (syl.i % 2 == 0) and 10 or -10
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,template syl,{\an5\pos($scenter,$smiddle)\1c!linecolor!\t($start,$mid,\frz!sylrot!)\t($mid,$end,\frz0)}
+Dialogue: 0,0:00:02.35,0:00:04.00,Default,,0,0,0,karaoke,{\k10}{\k20}for{\k30}sing{\k20}to{\k25}you {\k20}are{\k40}are
+Dialogue: 0,0:00:05.01,0:00:06.36,Default,,0,0,0,karaoke,{\k30}for{\k20}for {\k15}sing {\k50}shin {\k20}gain
+Dialogue: 0,0:00:07.21,0:00:09.16,Default,,0,0,0,karaoke,{\k30}{\k10}sing{\k20}ing{\k40}the{\k30}the {\k40}to {\k25}sing
+Dialogue: 0,0:00:10.37,0:00:11.77,Default,,0,0,0,karaoke,{\k20}{\k10}gain{\k25}ing{\k25}sing {\k40}sing{\k20}to

@@ -5,7 +5,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from aegisub_render.output import Output
+from aegisub_render.output import Output, use_utf8_for_pipes
 from aegisub_render.runner import ExitCode, RenderOptions, list_features, render
 from aegisub_render.settings import ConfigError, Settings, load_settings
 from aegisub_render.video.context import VideoOptions
@@ -44,13 +44,24 @@ def parse_size(spec: str) -> tuple[int, int]:
 
 def _common(p: argparse.ArgumentParser) -> None:
     p.add_argument("input", type=Path, help="subtitle file (.ass/.ssa)")
-    p.add_argument("--config", type=Path, help="config file (default: AEGISUB_RENDER_CONFIG or the repository's config.py)")
+    p.add_argument(
+        "--config", type=Path, help="config file (default: AEGISUB_RENDER_CONFIG or the repository's config.py)"
+    )
     p.add_argument("--aegisub-root", type=Path, help="Aegisub installation directory (?data)")
     appdata = p.add_mutually_exclusive_group()
-    appdata.add_argument("--load-appdata", dest="load_appdata", action="store_true", default=None,
-                         help="use %%APPDATA%%\\Aegisub as ?user")
-    appdata.add_argument("--no-load-appdata", dest="load_appdata", action="store_false",
-                         help="portable mode: ?user is the Aegisub directory")
+    appdata.add_argument(
+        "--load-appdata",
+        dest="load_appdata",
+        action="store_true",
+        default=None,
+        help="use %%APPDATA%%\\Aegisub as ?user",
+    )
+    appdata.add_argument(
+        "--no-load-appdata",
+        dest="load_appdata",
+        action="store_false",
+        help="portable mode: ?user is the Aegisub directory",
+    )
     p.add_argument("--script", help="script path, or file name looked up in the autoload directories")
     p.add_argument("--timeout", type=float, help="wall-clock limit in seconds")
     p.add_argument("--memory-limit", type=int, help="Lua heap limit in bytes")
@@ -76,7 +87,9 @@ def _common(p: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="aegisub-render", description="Run Aegisub 3.5.0 automation scripts headlessly.")
+    parser = argparse.ArgumentParser(
+        prog="aegisub-render", description="Run Aegisub 3.5.0 automation scripts headlessly."
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     r = sub.add_parser("render", help="run a macro (default: kara-templater) or export filter and save the result")
@@ -137,6 +150,7 @@ def _options(args: argparse.Namespace, settings: Settings) -> RenderOptions:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    use_utf8_for_pipes()
     args = build_parser().parse_args(argv)
     try:
         settings = _settings(args)

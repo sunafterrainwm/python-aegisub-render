@@ -30,7 +30,7 @@ class AegisubPaths:
     tokens: dict[str, str] = field(default_factory=dict[str, str])
 
     @staticmethod
-    def create(aegisub_root: Path, load_appdata: bool | None) -> "AegisubPaths":
+    def create(aegisub_root: Path, load_appdata: bool | None) -> AegisubPaths:
         data = str(aegisub_root.resolve())
         if load_appdata is None:
             # main.cpp: a config.json next to aegisub.exe means a portable installation

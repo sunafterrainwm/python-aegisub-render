@@ -12,7 +12,18 @@ import os
 import stat
 import time
 from collections.abc import Callable
-from ctypes import CFUNCTYPE, POINTER, Structure, c_bool, c_char_p, c_int, c_longlong, c_size_t, c_ulonglong, c_void_p
+from ctypes import (
+    CFUNCTYPE,
+    POINTER,
+    Structure,
+    c_bool,
+    c_char_p,
+    c_int,
+    c_longlong,
+    c_size_t,
+    c_ulonglong,
+    c_void_p,
+)
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,7 +36,7 @@ from aegisub_render.textenc import from_bytes, to_bytes
 _FILETIME_EPOCH_OFFSET = 11644473600
 
 
-class agi_re_flag(Structure):  # noqa: N801 - C name
+class agi_re_flag(Structure):
     _fields_ = (("name", c_char_p), ("value", c_int))
 
 
@@ -88,7 +99,7 @@ class FfiImpls:
         def compile_(pattern: int, flags: int, err: int) -> int:
             try:
                 compiled = regex_impl.compile_regex(from_bytes(ctypes.string_at(pattern)), flags)
-            except Exception as e:  # noqa: BLE001 - reported to Lua through err
+            except Exception as e:
                 self._set_err(err, str(e))
                 return 0
             return self._new_handle(compiled)
@@ -112,7 +123,7 @@ class FfiImpls:
                     arr[0] = first + 1
                     arr[1] = last
                 return ptr
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 self._set_err(err, str(e))
                 return 0
 
@@ -126,7 +137,7 @@ class FfiImpls:
                     return 0
                 rng = (c_int * 2)()
                 return self._new_handle((compiled, subject, m, start, rng))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 self._set_err(err, str(e))
                 return 0
 
@@ -156,7 +167,7 @@ class FfiImpls:
                 subject = regex_impl.Subject.decode(ctypes.string_at(s, length))
                 out = regex_impl.replace(compiled, from_bytes(ctypes.string_at(replacement)), subject, max_count)
                 return self._malloc_bytes(to_bytes(out))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 self._set_err(err, str(e))
                 return 0
 
@@ -167,16 +178,31 @@ class FfiImpls:
         return LibSpec(
             ["agi_re_match", "u32regex"],
             [
-                ("search", "int* (*)(u32regex&, char const*, unsigned long long, unsigned long long, char**)",
-                 self._callback(CFUNCTYPE(vp, vp, vp, sz, sz, vp), search)),
-                ("match", "agi_re_match* (*)(u32regex&, char const*, unsigned long long, int, char**)",
-                 self._callback(CFUNCTYPE(vp, vp, vp, sz, c_int, vp), match)),
-                ("get_match", "int* (*)(agi_re_match&, unsigned long long)",
-                 self._callback(CFUNCTYPE(vp, vp, sz), get_match)),
-                ("replace", "char* (*)(u32regex&, char const*, char const*, unsigned long long, int, char**)",
-                 self._callback(CFUNCTYPE(vp, vp, vp, vp, sz, c_int, vp), replace)),
-                ("compile", "u32regex* (*)(char const*, int, char**)",
-                 self._callback(CFUNCTYPE(vp, vp, c_int, vp), compile_)),
+                (
+                    "search",
+                    "int* (*)(u32regex&, char const*, unsigned long long, unsigned long long, char**)",
+                    self._callback(CFUNCTYPE(vp, vp, vp, sz, sz, vp), search),
+                ),
+                (
+                    "match",
+                    "agi_re_match* (*)(u32regex&, char const*, unsigned long long, int, char**)",
+                    self._callback(CFUNCTYPE(vp, vp, vp, sz, c_int, vp), match),
+                ),
+                (
+                    "get_match",
+                    "int* (*)(agi_re_match&, unsigned long long)",
+                    self._callback(CFUNCTYPE(vp, vp, sz), get_match),
+                ),
+                (
+                    "replace",
+                    "char* (*)(u32regex&, char const*, char const*, unsigned long long, int, char**)",
+                    self._callback(CFUNCTYPE(vp, vp, vp, vp, sz, c_int, vp), replace),
+                ),
+                (
+                    "compile",
+                    "u32regex* (*)(char const*, int, char**)",
+                    self._callback(CFUNCTYPE(vp, vp, c_int, vp), compile_),
+                ),
                 ("get_flags", "agi_re_flag const* (*)()", self._callback(CFUNCTYPE(vp), get_flags)),
                 ("match_free", "void (*)(agi_re_match*)", self._callback(CFUNCTYPE(None, vp), match_free)),
                 ("regex_free", "void (*)(u32regex*)", self._callback(CFUNCTYPE(None, vp), regex_free)),
@@ -191,7 +217,7 @@ class FfiImpls:
                 try:
                     text = ctypes.string_at(s).decode("utf-8", "replace")
                     return self._malloc_bytes(fn(text).encode("utf-8", "surrogatepass"))
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     self._set_err(err, str(e))
                     return 0
 
@@ -215,7 +241,7 @@ class FfiImpls:
             return from_bytes(ctypes.string_at(p))
 
         def fs_error(e: OSError, path: str) -> str:
-            return f"{e.strerror or e}: \"{path}\""
+            return f'{e.strerror or e}: "{path}"'
 
         def setter(action: Callable[[str], None]) -> Callable[[int, int], bool]:
             def impl(p: int, err: int) -> bool:
@@ -225,7 +251,7 @@ class FfiImpls:
                     return True
                 except OSError as e:
                     self._set_err(err, fs_error(e, path))
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     self._set_err(err, str(e))
                 return False
 
@@ -256,9 +282,13 @@ class FfiImpls:
                 return 0
 
         mode_names = {
-            stat.S_IFREG: b"file", stat.S_IFDIR: b"directory", stat.S_IFLNK: b"link",
-            stat.S_IFBLK: b"block device", stat.S_IFCHR: b"char device",
-            stat.S_IFIFO: b"fifo", stat.S_IFSOCK: b"socket",
+            stat.S_IFREG: b"file",
+            stat.S_IFDIR: b"directory",
+            stat.S_IFLNK: b"link",
+            stat.S_IFBLK: b"block device",
+            stat.S_IFCHR: b"char device",
+            stat.S_IFIFO: b"fifo",
+            stat.S_IFSOCK: b"socket",
         }
         mode_ptrs: dict[bytes, int] = {}
         for name in [*mode_names.values(), b"other"]:
@@ -333,19 +363,28 @@ class FfiImpls:
                 ("mkdir", bool_sig, self._callback(CFUNCTYPE(c_bool, vp, vp), setter(mkdir))),
                 ("rmdir", bool_sig, self._callback(CFUNCTYPE(c_bool, vp, vp), setter(rmdir))),
                 ("touch", bool_sig, self._callback(CFUNCTYPE(c_bool, vp, vp), setter(touch))),
-                ("get_mtime", "long long (*)(char const*, char**)",
-                 self._callback(CFUNCTYPE(c_longlong, vp, vp), get_mtime)),
-                ("get_mode", "char const* (*)(char const*, char**)",
-                 self._callback(CFUNCTYPE(vp, vp, vp), get_mode)),
-                ("get_size", "unsigned long long (*)(char const*, char**)",
-                 self._callback(CFUNCTYPE(c_ulonglong, vp, vp), get_size)),
-                ("dir_new", "DirectoryIterator* (*)(char const*, char**)",
-                 self._callback(CFUNCTYPE(vp, vp, vp), dir_new)),
-                ("dir_free", "void (*)(DirectoryIterator*, char**)",
-                 self._callback(CFUNCTYPE(None, vp, vp), dir_free)),
-                ("dir_next", "char* (*)(DirectoryIterator&, char**)",
-                 self._callback(CFUNCTYPE(vp, vp, vp), dir_next)),
-                ("dir_close", "void (*)(DirectoryIterator&, char**)",
-                 self._callback(CFUNCTYPE(None, vp, vp), dir_close)),
+                (
+                    "get_mtime",
+                    "long long (*)(char const*, char**)",
+                    self._callback(CFUNCTYPE(c_longlong, vp, vp), get_mtime),
+                ),
+                ("get_mode", "char const* (*)(char const*, char**)", self._callback(CFUNCTYPE(vp, vp, vp), get_mode)),
+                (
+                    "get_size",
+                    "unsigned long long (*)(char const*, char**)",
+                    self._callback(CFUNCTYPE(c_ulonglong, vp, vp), get_size),
+                ),
+                (
+                    "dir_new",
+                    "DirectoryIterator* (*)(char const*, char**)",
+                    self._callback(CFUNCTYPE(vp, vp, vp), dir_new),
+                ),
+                ("dir_free", "void (*)(DirectoryIterator*, char**)", self._callback(CFUNCTYPE(None, vp, vp), dir_free)),
+                ("dir_next", "char* (*)(DirectoryIterator&, char**)", self._callback(CFUNCTYPE(vp, vp, vp), dir_next)),
+                (
+                    "dir_close",
+                    "void (*)(DirectoryIterator&, char**)",
+                    self._callback(CFUNCTYPE(None, vp, vp), dir_close),
+                ),
             ],
         )

@@ -18,3 +18,4 @@ dist/
 # test scratch output
 /tests/_out/
 /native/subprojects/.wraplock
+.mypy_cache/

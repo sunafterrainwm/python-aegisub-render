@@ -25,7 +25,7 @@ FLAGS: dict[str, int] = {
 
 @dataclass(slots=True)
 class CompiledRegex:
-    pattern: "regex.Pattern[str]"
+    pattern: regex.Pattern[str]
     nosubs: bool
 
 
@@ -37,7 +37,7 @@ class Subject:
     byte_offsets: list[int]  # byte offset of each char index (len(text) + 1 entries)
 
     @staticmethod
-    def decode(data: bytes) -> "Subject":
+    def decode(data: bytes) -> Subject:
         text = data.decode("utf-8")  # boost::u32regex throws on invalid UTF-8 as well
         offsets = [0] * (len(text) + 1)
         pos = 0
@@ -90,11 +90,11 @@ def compile_regex(pattern: str, flags: int) -> CompiledRegex:
     return CompiledRegex(compiled, bool(flags & FLAGS["NOSUB"]))
 
 
-def search(re: CompiledRegex, subject: Subject, start_byte: int) -> "regex.Match[str] | None":
+def search(re: CompiledRegex, subject: Subject, start_byte: int) -> regex.Match[str] | None:
     return re.pattern.search(subject.text, subject.char_index(start_byte))
 
 
-def group_span_bytes(m: "regex.Match[str]", subject: Subject, idx: int, nosubs: bool) -> tuple[int, int] | None:
+def group_span_bytes(m: regex.Match[str], subject: Subject, idx: int, nosubs: bool) -> tuple[int, int] | None:
     count = 1 if nosubs else (m.re.groups + 1)
     if idx >= count:
         return None
@@ -107,7 +107,7 @@ def group_span_bytes(m: "regex.Match[str]", subject: Subject, idx: int, nosubs: 
 _ESCAPES = {"a": "\a", "e": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v"}
 
 
-def format_replacement(m: "regex.Match[str]", fmt: str, subject: str) -> str:
+def format_replacement(m: regex.Match[str], fmt: str, subject: str) -> str:
     """boost::match_results::format with the default (perl) format flags."""
     out: list[str] = []
     case_mode = ""  # "U", "L" until \E

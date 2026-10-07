@@ -38,7 +38,7 @@ def _load_cache(video: Path, st: os.stat_result) -> VideoInfo | None:
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
         info = VideoInfo(**data)
-    except (OSError, ValueError, TypeError):
+    except OSError, ValueError, TypeError:
         return None
     if info.path != str(video.resolve()) or info.size != st.st_size or info.mtime_ns != st.st_mtime_ns:
         return None
@@ -63,7 +63,7 @@ def _probe(video: Path, st: os.stat_result) -> VideoInfo:
         stream = container.streams.video[0]
         has_audio = len(container.streams.audio) > 0
         tb = stream.time_base
-        if tb is None:
+        if not tb:
             raise ValueError("video stream has no time base")
         num, den = tb.numerator * 1000, tb.denominator
         pts_list: list[int] = []
@@ -79,7 +79,7 @@ def _probe(video: Path, st: os.stat_result) -> VideoInfo:
         cc = stream.codec_context
         width, height = int(cc.width), int(cc.height)
         sar = stream.sample_aspect_ratio
-        if sar is not None and sar.numerator > 0 and sar.denominator > 0 and height > 0:
+        if sar and sar.numerator > 0 and sar.denominator > 0 and height > 0:
             dar = width * sar.numerator / (height * sar.denominator)
         else:
             dar = width / height if height else 1.0
@@ -87,8 +87,9 @@ def _probe(video: Path, st: os.stat_result) -> VideoInfo:
     order = sorted(range(len(pts_list)), key=lambda i: pts_list[i])
     timestamps = [int(cdiv(pts_list[i] * num, den)) for i in order]
     keyframes = [n for n, i in enumerate(order) if key_flags[i]]
-    return VideoInfo(str(video.resolve()), st.st_size, st.st_mtime_ns, width, height, dar, has_audio,
-                     timestamps, keyframes)
+    return VideoInfo(
+        str(video.resolve()), st.st_size, st.st_mtime_ns, width, height, dar, has_audio, timestamps, keyframes
+    )
 
 
 def probe_video(video: Path, use_cache: bool = True, refresh: bool = False) -> VideoInfo:

@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path, PureWindowsPath
 
-from aegisub_render.ass.parser import UnsupportedEncodingError, read_ass_file
 from aegisub_render.ass.entries import SubtitleFormatParseError
+from aegisub_render.ass.parser import UnsupportedEncodingError, read_ass_file
 from aegisub_render.ass.writer import write_ass_file
 from aegisub_render.output import Output
 from aegisub_render.paths import AegisubPaths, join
@@ -59,7 +59,7 @@ def resolve_script(name: str, paths: AegisubPaths, autoload_option: str) -> Path
     raise RenderError(f"script {name!r} not found in the autoload directories ({autoload_option})")
 
 
-def _prepare(input_path: Path, settings: Settings, options: RenderOptions, out: Output) -> Prepared:
+def prepare(input_path: Path, settings: Settings, options: RenderOptions, out: Output) -> Prepared:
     root = settings.aegisub_root
     if not (root / "automation").is_dir():
         raise RenderError(f"{root} does not look like an Aegisub installation (no automation directory)")
@@ -73,8 +73,10 @@ def _prepare(input_path: Path, settings: Settings, options: RenderOptions, out: 
     except (UnsupportedEncodingError, SubtitleFormatParseError) as e:
         raise RenderError(f"could not read {input_path}: {e}") from None
     if ass.line_count() > settings.max_input_lines:
-        raise RenderError(f"{input_path} has {ass.line_count()} lines, more than the limit of "
-                          f"{settings.max_input_lines} (MAX_INPUT_LINES)")
+        raise RenderError(
+            f"{input_path} has {ass.line_count()} lines, more than the limit of "
+            f"{settings.max_input_lines} (MAX_INPUT_LINES)"
+        )
 
     vopts = options.video
     vopts.open_audio = aeg.open_audio
@@ -98,8 +100,9 @@ def _prepare(input_path: Path, settings: Settings, options: RenderOptions, out: 
         font_dirs=list(settings.font_dirs),
         quiet=options.quiet,
         progress=options.progress,
-        macro=options.macro if options.macro is not None else (
-            None if options.filter is not None else settings.default_macro),
+        macro=options.macro
+        if options.macro is not None
+        else (None if options.filter is not None else settings.default_macro),
         filter=options.filter,
         selection=options.selection,
         force=options.force,
@@ -120,7 +123,9 @@ def run_job(job: Job, timeout: float) -> Result:
             if remaining <= 0:
                 proc.kill()
                 proc.join()
-                return Result("error", f"aegisub-render: the script ran longer than {timeout:g} seconds and was stopped")
+                return Result(
+                    "error", f"aegisub-render: the script ran longer than {timeout:g} seconds and was stopped"
+                )
             if parent_conn.poll(min(remaining, 0.25)):
                 try:
                     result: Result = parent_conn.recv()
@@ -138,12 +143,17 @@ def run_job(job: Job, timeout: float) -> Result:
     return Result("error", f"aegisub-render: the Lua worker process died (exit code {proc.exitcode})")
 
 
-def render(input_path: Path, output_path: Path, settings: Settings, options: RenderOptions | None = None,
-           out: Output | None = None) -> ExitCode:
+def render(
+    input_path: Path,
+    output_path: Path,
+    settings: Settings,
+    options: RenderOptions | None = None,
+    out: Output | None = None,
+) -> ExitCode:
     options = options or RenderOptions()
     out = out or Output(quiet=options.quiet, progress=options.progress)
     try:
-        prepared = _prepare(input_path, settings, options, out)
+        prepared = prepare(input_path, settings, options, out)
     except RenderError as e:
         out.message(f"aegisub-render: {e}")
         return ExitCode.ERROR
@@ -160,12 +170,13 @@ def render(input_path: Path, output_path: Path, settings: Settings, options: Ren
     return ExitCode.OK
 
 
-def list_features(input_path: Path, settings: Settings, options: RenderOptions | None = None,
-                  out: Output | None = None) -> FeatureList | None:
+def list_features(
+    input_path: Path, settings: Settings, options: RenderOptions | None = None, out: Output | None = None
+) -> FeatureList | None:
     options = options or RenderOptions()
     out = out or Output(quiet=options.quiet, progress=False)
     try:
-        prepared = _prepare(input_path, settings, options, out)
+        prepared = prepare(input_path, settings, options, out)
     except RenderError as e:
         out.message(f"aegisub-render: {e}")
         return None

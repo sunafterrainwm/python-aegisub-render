@@ -1,0 +1,20 @@
+﻿[Script Info]
+Title: aegisub-render test case 10-keeptags-kf
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Georgia,54,&H00AEC6AF,&H00D4CA00,&H00483990,&H802A87E5,0,-1,0,0,90,100,0,0,1,2,1,8,40,10,50,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,template syl keeptags,{\an5\pos($scenter,$smiddle)}
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,template line keeptags,{\an5\pos($lcenter,!$lmiddle+60!)\alpha&H60&}
+Dialogue: 0,0:00:00.80,0:00:02.30,Default,,0,0,0,karaoke,{\kf30\b1}you{\kf30\i0}with{\kf20}ing{\kf20}to{\kf20\i0}a{\kf30\fs50}stars
+Dialogue: 0,0:00:03.00,0:00:04.20,Default,,0,0,0,karaoke,{\ko30\fs50}me{\ko30}you{\ko40}for{\ko20\fs50}ing
+Dialogue: 0,0:00:04.90,0:00:05.90,Default,,0,0,0,karaoke,{\K40\i0}you{\K20\b1}me{\K20}me{\K20\i0}the

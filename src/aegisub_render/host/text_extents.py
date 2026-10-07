@@ -119,8 +119,9 @@ class TextExtents:
 
     @staticmethod
     @lru_cache(maxsize=256)
-    def _logfont_key(height: int, weight: int, italic: int, underline: int, strikeout: int, charset: int,
-                     face: str) -> LOGFONTW:
+    def _logfont_key(
+        height: int, weight: int, italic: int, underline: int, strikeout: int, charset: int, face: str
+    ) -> LOGFONTW:
         lf = LOGFONTW()
         lf.lfHeight = height
         lf.lfWeight = weight
@@ -149,11 +150,18 @@ class TextExtents:
             face = face_units.decode("utf-16-le", "surrogatepass").split("\0", 1)[0]
             try:
                 height = int(fontsize)
-            except (OverflowError, ValueError):
+            except OverflowError, ValueError:
                 height = -(2**31)
             height = max(-(2**31), min(2**31 - 1, height))
-            lf = self._logfont_key(height, FW_BOLD if style.bold else FW_NORMAL, int(style.italic),
-                                   int(style.underline), int(style.strikeout), style.encoding & 0xFF, face)
+            lf = self._logfont_key(
+                height,
+                FW_BOLD if style.bold else FW_NORMAL,
+                int(style.italic),
+                int(style.underline),
+                int(style.strikeout),
+                style.encoding & 0xFF,
+                face,
+            )
             font = _CreateFontIndirectW(ctypes.byref(lf))
             if not font:
                 return None

@@ -115,7 +115,6 @@ end
 
 local runner_marker = {}
 local moon_raw = {}
-local trusted_sources = {}
 
 local function moon_line(lua_line, file)
 	local ok, line_tables = pcall(require, "moonscript.line_tables")
@@ -199,9 +198,15 @@ local function add_stack_trace(msg, lvl)
 	return tconcat(out, "\n")
 end
 
+local function pack(...)
+	return { n = select("#", ...), ... }
+end
+
 -- Call f(...) the way Aegisub calls into Lua (lua_pcall with add_stack_trace as handler).
+-- Deliberately not a tail call: add_stack_trace stops at this frame.
 local function run_protected(f, ...)
-	return xpcall(f, add_stack_trace, ...)
+	local r = pack(xpcall(f, add_stack_trace, ...))
+	return unpack(r, 1, r.n)
 end
 runner_marker.func = run_protected
 
@@ -214,18 +219,24 @@ end
 
 local moonscript_loadstring
 
+-- Environment of every chunk loaded from a file (see the sandbox section below)
+local file_env
+
 -- agi::lua::LoadFile. Returns the compiled chunk, or nil and an error message.
 local function load_file(path)
 	local ok, content, chunkname = pcall(P.read_file, path)
 	if not ok then return nil, content end
-	trusted_sources[chunkname] = true
+	local f, err
 	if not has_extension(chunkname, "moon") then
-		return loadstring(content, chunkname)
+		f, err = loadstring(content, chunkname)
+	else
+		moon_raw[chunkname] = content
+		local ok2
+		ok2, f, err = pcall(moonscript_loadstring, content, chunkname)
+		if not ok2 then return nil, f end
 	end
-	moon_raw[chunkname] = content
-	local ok2, f, err = pcall(moonscript_loadstring, content, chunkname)
-	if not ok2 then return nil, f end
 	if f == nil then return nil, err end
+	if file_env then setfenv(f, file_env) end
 	return f
 end
 
@@ -373,30 +384,35 @@ end
 local safe_os = restricted("os", { "clock", "date", "difftime", "time" })
 local safe_debug = restricted("debug", { "traceback" })
 
-local function is_trusted_caller()
-	local level = 3 -- caller of the require wrapper
-	while true do
-		local ar = getinfo(level, "S")
-		if not ar then return false end
-		if ar.what ~= "C" then
-			return ar.source == INTERNAL or trusted_sources[ar.source] == true
+-- require for the sandbox: io/package are blocked and os/debug give the restricted tables.
+-- The ffi is only handed out to code loaded from files (scripts and modules from the
+-- include/autoload directories): those chunks run with `file_env`, whose `require` allows it,
+-- while code compiled at run time (loadstring/load, e.g. kara-templater templates) sees the
+-- global `require`, which does not. Being decided by the function environment rather than by
+-- inspecting the stack, this cannot be sidestepped with tail calls.
+local blocked_io, blocked_package
+
+local function make_require(allow_ffi)
+	return function(name, ...)
+		if name == "ffi" and not allow_ffi then
+			error(blocked_message('require "ffi" from code that was not loaded from an include or autoload directory'), 2)
+		elseif name == "io" then
+			return blocked_io
+		elseif name == "package" then
+			return blocked_package
+		elseif name == "os" then
+			return safe_os
+		elseif name == "debug" then
+			return safe_debug
 		end
-		level = level + 1
+		return require(name, ...)
 	end
 end
 
-local sandbox_require = function(name, ...)
-	if name == "ffi" and not is_trusted_caller() then
-		error(blocked_message('require "ffi" from code that was not loaded from an include or autoload directory'), 2)
-	elseif name == "io" or name == "package" then
-		error(blocked_message(sformat('require "%s"', name)), 2)
-	elseif name == "os" then
-		return safe_os
-	elseif name == "debug" then
-		return safe_debug
-	end
-	return require(name, ...)
-end
+blocked_io = make_blocked("io")
+blocked_package = make_blocked("package")
+local global_require = make_require(false)
+file_env = setmetatable({ require = make_require(true) }, { __index = _G, __newindex = _G })
 
 local trace_level = cfg.trace_level
 
@@ -405,14 +421,14 @@ local function log_at(level, text)
 end
 
 local function apply_sandbox()
-	_G.io = make_blocked("io")
-	_G.package = make_blocked("package")
+	_G.io = blocked_io
+	_G.package = blocked_package
 	_G.dofile = make_blocked("dofile")
 	_G.loadfile = make_blocked("loadfile")
 	_G.module = make_blocked("module")
 	_G.os = safe_os
 	_G.debug = safe_debug
-	_G.require = sandbox_require
+	_G.require = global_require
 	_G.getmetatable = function(v)
 		if type(v) == "table" then return getmetatable(v) end
 		return nil

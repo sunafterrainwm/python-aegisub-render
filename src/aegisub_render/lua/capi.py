@@ -56,7 +56,7 @@ def upvalueindex(i: int) -> int:
 lua_CFunction = CFUNCTYPE(c_ssize_t, c_void_p)
 
 
-class lua_Debug(Structure):  # noqa: N801 - C name
+class lua_Debug(Structure):
     _fields_ = (
         ("event", c_int),
         ("name", c_char_p),
@@ -85,7 +85,7 @@ class LuaAPI:
             f.argtypes = argtypes
             return f
 
-        L = c_void_p  # noqa: N806
+        L = c_void_p
         self.aegi_newstate = fn("aegi_newstate", c_void_p, c_size_t)
         self.aegi_close = fn("aegi_close", None, L)
         self.aegi_suspend_limit = fn("aegi_suspend_limit", None, L, c_int)

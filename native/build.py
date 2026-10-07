@@ -63,19 +63,32 @@ def msvc_environment() -> dict[str, str]:
     """Environment of a "x64 Native Tools" prompt (what Aegisub's CI gets from Enter-VsDevShell)."""
     if "VCINSTALLDIR" in os.environ:
         return dict(os.environ)
-    vswhere = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))
+    vswhere = Path(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"))
     vswhere = vswhere / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
     install = subprocess.run(
-        [str(vswhere), "-latest", "-products", "*",
-         "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-         "-property", "installationPath"],
-        check=True, capture_output=True, text=True,
+        [
+            str(vswhere),
+            "-latest",
+            "-products",
+            "*",
+            "-requires",
+            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+            "-property",
+            "installationPath",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
     if not install:
         raise SystemExit("Visual Studio with the x64 C++ toolchain was not found")
     vcvars = Path(install) / "VC" / "Auxiliary" / "Build" / "vcvars64.bat"
     dump = subprocess.run(
-        f'"{vcvars}" >nul && set', shell=True, check=True, capture_output=True, text=True,
+        f'"{vcvars}" >nul && set',
+        shell=True,
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout
     env: dict[str, str] = {}
     for line in dump.splitlines():
@@ -99,7 +112,9 @@ def main() -> None:
     if not (BUILD_DIR / "build.ninja").exists():
         subprocess.run(
             [*meson, "setup", str(BUILD_DIR), "--buildtype=release", "--backend=ninja"],
-            cwd=NATIVE, env=env, check=True,
+            cwd=NATIVE,
+            env=env,
+            check=True,
         )
     subprocess.run([*meson, "compile", "-C", str(BUILD_DIR)], cwd=NATIVE, env=env, check=True)
     built = BUILD_DIR / "aegisub_lua.dll"

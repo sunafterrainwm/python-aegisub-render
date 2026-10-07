@@ -76,8 +76,13 @@ def load_keyframes(path: Path) -> list[int]:
     header, rest = (lines[0], lines[1:]) if lines else ("", [])
     if header == "# keyframe format v1":
         return _agi_keyframes(rest)
-    if header.startswith(("# XviD 2pass stat file", "# ffmpeg 2-pass log file, using xvid codec",
-                          "# avconv 2-pass log file, using xvid codec")):
+    if header.startswith(
+        (
+            "# XviD 2pass stat file",
+            "# ffmpeg 2-pass log file, using xvid codec",
+            "# avconv 2-pass log file, using xvid codec",
+        )
+    ):
         return _enumerated(rest, _xvid)
     if header.startswith("##map version"):
         return _enumerated(rest, _divx)

@@ -1,7 +1,16 @@
 """stderr output: script log (aegisub.debug.out), status lines, and a single-line progress display."""
 
+import io
 import sys
+import time
 from typing import TextIO
+
+
+def use_utf8_for_pipes() -> None:
+    """Consoles get proper Unicode from Python already; make redirected output UTF-8 too."""
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper) and not stream.isatty():
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
 class Output:
@@ -15,6 +24,7 @@ class Output:
         self._title = ""
         self._percent = 0.0
         self._at_line_start = True
+        self._last_draw = 0.0
 
     def _clear_progress(self) -> None:
         if self._progress_shown:
@@ -51,6 +61,10 @@ class Output:
             self._title = title
         if not self.progress_enabled or not self._at_line_start:
             return
+        now = time.monotonic()
+        if now - self._last_draw < 0.1:
+            return
+        self._last_draw = now
         label = " - ".join(x for x in (self._title, self._task) if x)
         self.stream.write(f"\r\x1b[2K[{self._percent:5.1f}%] {label}"[:200])
         self.stream.flush()

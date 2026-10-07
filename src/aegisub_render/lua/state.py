@@ -53,14 +53,14 @@ class ArgError(ScriptError):
         self.extramsg = extramsg
 
 
-class CancelScript(Exception):  # noqa: N818 - mirrors aegisub.cancel()
+class CancelScript(Exception):
     """Raise a Lua error whose value is nil (what aegisub.cancel() does)."""
 
 
 class _Nil:
-    _instance: "_Nil | None" = None
+    _instance: _Nil | None = None
 
-    def __new__(cls) -> "_Nil":
+    def __new__(cls) -> _Nil:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
@@ -95,7 +95,7 @@ class CFunction:
 class PyFunction:
     """A Python callable to push as the raw dispatcher closure (wrap it in Lua before exposing it)."""
 
-    func: "PyFunc"
+    func: PyFunc
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +108,7 @@ class LuaOpaque:
 type PyFunc = Callable[..., object]
 
 
-def _type_name(api: LuaAPI, L: int, t: int) -> str:  # noqa: N803
+def _type_name(api: LuaAPI, L: int, t: int) -> str:
     name = api.lua_typename(L, t)
     return name.decode() if name else "no value"
 
@@ -119,36 +119,36 @@ class LuaState:
         handle = api.aegi_newstate(memory_limit)
         if not handle:
             raise MemoryError("could not create a Lua state")
-        self.L: int = handle
+        self.main: int = handle  # the main lua_State*
         self._funcs: list[PyFunc] = []
         self._pending: BaseException | None = None
         self._dispatcher = lua_CFunction(self._dispatch)
         self._dispatcher_ptr: int = ctypes.cast(self._dispatcher, ctypes.c_void_p).value or 0
         self.traceback_ref: int | None = None
-        status = api.lua_cpcall(self.L, api.aegi_openlibs_ptr, None)
+        status = api.lua_cpcall(self.main, api.aegi_openlibs_ptr, None)
         if status != capi.LUA_OK:
-            raise LuaError(status, self.to_python(self.L, -1))
+            raise LuaError(status, self.to_python(self.main, -1))
 
     def close(self) -> None:
-        if self.L:
-            self.api.aegi_close(self.L)
-            self.L = 0
+        if self.main:
+            self.api.aegi_close(self.main)
+            self.main = 0
 
     @property
     def memory_used(self) -> int:
-        return int(self.api.aegi_memory_used(self.L))
+        return int(self.api.aegi_memory_used(self.main))
 
     @property
     def memory_peak(self) -> int:
-        return int(self.api.aegi_memory_peak(self.L))
+        return int(self.api.aegi_memory_peak(self.main))
 
     @property
     def memory_limit_hit(self) -> bool:
-        return bool(self.api.aegi_memory_limit_hit(self.L))
+        return bool(self.api.aegi_memory_limit_hit(self.main))
 
     # ----------------------------------------------------------------- conversion
 
-    def to_python(self, L: int, idx: int, depth: int = 0) -> object:  # noqa: N803
+    def to_python(self, L: int, idx: int, depth: int = 0) -> object:
         api = self.api
         t = api.lua_type(L, idx)
         if t in (capi.LUA_TNIL, capi.LUA_TNONE):
@@ -176,7 +176,7 @@ class LuaState:
             return result
         return LuaOpaque(_type_name(api, L, t))
 
-    def push(self, L: int, value: object, depth: int = 0) -> None:  # noqa: N803
+    def push(self, L: int, value: object, depth: int = 0) -> None:
         api = self.api
         if depth > 64:
             raise RecursionError("value nested too deeply to convert to Lua")
@@ -219,13 +219,13 @@ class LuaState:
 
     # ----------------------------------------------------------------- Python -> Lua functions
 
-    def push_function(self, L: int, func: PyFunc) -> None:  # noqa: N803
+    def push_function(self, L: int, func: PyFunc) -> None:
         """Push the raw dispatcher closure for func; wrap it on the Lua side before exposing it."""
         self._funcs.append(func)
         self.api.lua_pushnumber(L, float(len(self._funcs) - 1))
         self.api.lua_pushcclosure(L, self._dispatcher_ptr, 1)
 
-    def _caller_name(self, L: int) -> tuple[str, str]:  # noqa: N803
+    def _caller_name(self, L: int) -> tuple[str, str]:
         """Name and namewhat of the Lua wrapper that called the dispatcher (stack level 1)."""
         ar = lua_Debug()
         if not self.api.lua_getstack(L, 1, ctypes.byref(ar)):
@@ -235,7 +235,7 @@ class LuaState:
         namewhat = from_bytes(ar.namewhat) if ar.namewhat else ""
         return name, namewhat
 
-    def _argerror_message(self, L: int, narg: int, extramsg: str) -> str:  # noqa: N803
+    def _argerror_message(self, L: int, narg: int, extramsg: str) -> str:
         name, namewhat = self._caller_name(L)
         if namewhat == "method":
             narg -= 1
@@ -243,7 +243,7 @@ class LuaState:
                 return f"calling '{name}' on bad self ({extramsg})"
         return f"bad argument #{narg} to '{name}' ({extramsg})"
 
-    def _dispatch(self, L: int) -> int:  # noqa: N803
+    def _dispatch(self, L: int) -> int:
         api = self.api
         api.aegi_suspend_limit(L, 1)
         try:
@@ -261,8 +261,13 @@ class LuaState:
                 api.lua_pushboolean(L, 0)
                 return 1
             except Exception as e:  # a bug in the host: report it to the script as an error
-                return self._fail(L, "aegisub-render internal error: " + "".join(
-                    traceback.format_exception_only(e)).strip() + "\n" + traceback.format_exc())
+                return self._fail(
+                    L,
+                    "aegisub-render internal error: "
+                    + "".join(traceback.format_exception_only(e)).strip()
+                    + "\n"
+                    + traceback.format_exc(),
+                )
             except BaseException as e:  # KeyboardInterrupt etc.: re-raised once back in Python
                 self._pending = e
                 return self._fail(L, "interrupted")
@@ -283,7 +288,7 @@ class LuaState:
         finally:
             api.aegi_suspend_limit(L, 0)
 
-    def _fail(self, L: int, message: str) -> int:  # noqa: N803
+    def _fail(self, L: int, message: str) -> int:
         self.api.lua_settop(L, 0)
         self.api.lua_pushboolean(L, 0)
         self.push(L, message)
@@ -298,7 +303,7 @@ class LuaState:
 
     def load(self, code: bytes, chunkname: bytes) -> LuaRef:
         """luaL_loadbuffer; returns a registry ref to the compiled chunk."""
-        api, L = self.api, self.L
+        api, L = self.api, self.main
         api.aegi_suspend_limit(L, 1)
         try:
             status = api.luaL_loadbuffer(L, code, len(code), chunkname)
@@ -319,7 +324,7 @@ class LuaState:
         return tuple(r for r in self._call(func, args, handler, refs=True) if isinstance(r, LuaRef))
 
     def _call(self, func: LuaRef, args: tuple[object, ...], handler: bool, refs: bool) -> tuple[object, ...]:
-        api, L = self.api, self.L
+        api, L = self.api, self.main
         top = api.lua_gettop(L)
         api.aegi_suspend_limit(L, 1)
         try:
@@ -358,7 +363,7 @@ class LuaState:
         return results
 
     def ref(self, value: object) -> LuaRef:
-        api, L = self.api, self.L
+        api, L = self.api, self.main
         api.aegi_suspend_limit(L, 1)
         try:
             self.push(L, value)

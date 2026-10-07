@@ -53,8 +53,9 @@ def parse_karaoke_syllables(line: AssDialogue) -> list[KaraokeSyllable]:
                             tag.name = "\\kf"
                         if syl.duration > 0 or syl.text:
                             syls.append(syl)
-                            syl = KaraokeSyllable(start_time=syl.start_time, duration=syl.duration,
-                                                  text="", tag_type=syl.tag_type)
+                            syl = KaraokeSyllable(
+                                start_time=syl.start_time, duration=syl.duration, text="", tag_type=syl.tag_type
+                            )
                         syl.tag_type = tag.name
                         syl.start_time += syl.duration
                         syl.duration = tag.params[0].get_int(0) * 10

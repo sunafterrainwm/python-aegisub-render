@@ -129,12 +129,14 @@ class ScriptHost:
         chunk = self.state.load(code, BOOTSTRAP_CHUNKNAME)
         py_table = self._python_functions()
         try:
-            refs = self.state.call_for_refs(chunk, {k: PyFunction(f) for k, f in py_table.items()}, lua_cfg,
-                                               handler=False)
+            refs = self.state.call_for_refs(
+                chunk, {k: PyFunction(f) for k, f in py_table.items()}, lua_cfg, handler=False
+            )
         except LuaError as e:
             raise ScriptLoadError(f"could not initialise the Lua environment: {e.message}") from None
-        (traceback_ref, self._load_script, self._features, self._validate_macro,
-         self._run_macro, self._run_filter) = refs
+        (traceback_ref, self._load_script, self._features, self._validate_macro, self._run_macro, self._run_filter) = (
+            refs
+        )
         self.state.traceback_ref = traceback_ref.ref
 
     def close(self) -> None:
@@ -288,15 +290,35 @@ class ScriptHost:
             session(sid).undo_point()
 
         return {
-            "read_file": read_file, "file_exists": file_exists, "path_join": path_join, "log": log,
-            "log_host": log_host, "status": status, "progress_set": progress_set, "progress_task": progress_task,
-            "progress_title": progress_title, "progress_done": progress_done, "text_extents": text_extents,
-            "frame_from_ms": frame_from_ms, "ms_from_frame": ms_from_frame, "video_size": video_size,
-            "keyframes": keyframes, "decode_path": decode_path, "file_name": file_name,
-            "project_properties": project_properties, "subs_count": subs_count, "subs_read": subs_read,
-            "subs_assign": subs_assign, "subs_append": subs_append, "subs_insert": subs_insert,
-            "subs_delete": subs_delete, "subs_deleterange": subs_deleterange, "subs_resolution": subs_resolution,
-            "subs_karaoke": subs_karaoke, "subs_modified": subs_modified, "subs_undo_point": subs_undo_point,
+            "read_file": read_file,
+            "file_exists": file_exists,
+            "path_join": path_join,
+            "log": log,
+            "log_host": log_host,
+            "status": status,
+            "progress_set": progress_set,
+            "progress_task": progress_task,
+            "progress_title": progress_title,
+            "progress_done": progress_done,
+            "text_extents": text_extents,
+            "frame_from_ms": frame_from_ms,
+            "ms_from_frame": ms_from_frame,
+            "video_size": video_size,
+            "keyframes": keyframes,
+            "decode_path": decode_path,
+            "file_name": file_name,
+            "project_properties": project_properties,
+            "subs_count": subs_count,
+            "subs_read": subs_read,
+            "subs_assign": subs_assign,
+            "subs_append": subs_append,
+            "subs_insert": subs_insert,
+            "subs_delete": subs_delete,
+            "subs_deleterange": subs_deleterange,
+            "subs_resolution": subs_resolution,
+            "subs_karaoke": subs_karaoke,
+            "subs_modified": subs_modified,
+            "subs_undo_point": subs_undo_point,
         }
 
     # ----------------------------------------------------------------- script operations
@@ -315,13 +337,18 @@ class ScriptHost:
         info = _dict(payload)
         features = _dict(self.state.call(self._features)[0])
         macros = [
-            Macro(i + 1, _str(_dict(m).get(b"name")), _str(_dict(m).get(b"help", b"")),
-                  _dict(m).get(b"validate") is True)
+            Macro(
+                i + 1, _str(_dict(m).get(b"name")), _str(_dict(m).get(b"help", b"")), _dict(m).get(b"validate") is True
+            )
             for i, m in enumerate(_list(features.get(b"macros")))
         ]
         filters = [
-            Filter(i + 1, _str(_dict(f).get(b"name")), _str(_dict(f).get(b"description", b"")),
-                   int(_num(_dict(f).get(b"priority", 0.0))))
+            Filter(
+                i + 1,
+                _str(_dict(f).get(b"name")),
+                _str(_dict(f).get(b"description", b"")),
+                int(_num(_dict(f).get(b"priority", 0.0))),
+            )
             for i, f in enumerate(_list(features.get(b"filters")))
         ]
         return ScriptInfo(

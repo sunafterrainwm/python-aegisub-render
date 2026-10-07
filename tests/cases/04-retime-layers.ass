@@ -1,0 +1,22 @@
+﻿[Script Info]
+Title: aegisub-render test case 04-retime-layers
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Georgia,42,&H00A042D5,&H0020A32C,&H00707378,&H80CF72ED,0,0,0,0,100,100,0,0,1,2,0,2,10,10,30,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Comment: 1,0:00:00.00,0:00:00.00,Default,,0,0,0,template syl,!retime("syl", -200, 200)!{\an5\pos($scenter,$smiddle)\fad(200,200)}
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,template syl,!retime("presyl", -500, 0)!{\an5\pos($scenter,!$smiddle-20!)\alpha&H80&}
+Comment: 2,0:00:00.00,0:00:00.00,Default,,0,0,0,template syl,!retime("postsyl", 0, 300)!{\an5\move($scenter,$smiddle,$scenter,!$smiddle+30!)}
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,template line,!retime("line", -300, 300)!{\an5\pos($lcenter,$lmiddle)\fad(300,300)}
+Dialogue: 0,0:00:01.26,0:00:03.41,Default,,0,0,0,karaoke,{\k30}{\k15}る{\k10}ら{\k50}ひ{\k15}り{\k30}ら{\k50}み{\k15}わ
+Dialogue: 0,0:00:04.90,0:00:07.85,Default,,0,0,0,karaoke,{\k20}{\k50}ち{\k60}わ{\k15}わ{\k20}と{\k50}ひ{\k20}る{\k60}み
+Dialogue: 0,0:00:08.55,0:00:11.50,Default,,0,0,0,karaoke,{\k20}{\k10}さ{\k25}わ{\k40}ひ{\k50}み{\k30}り{\k25}か{\k30}き{\k40}さ{\k25}ち

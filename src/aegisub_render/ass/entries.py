@@ -46,7 +46,7 @@ class AssInfo:
     def entry_data(self) -> str:
         return f"{self.key}: {self.value}"
 
-    def copy(self) -> "AssInfo":
+    def copy(self) -> AssInfo:
         return AssInfo(self.key, self.value)
 
 
@@ -89,9 +89,28 @@ class _StyleTokens:
 
 class AssStyle:
     __slots__ = (
-        "_data", "alignment", "angle", "bold", "borderstyle", "encoding", "font", "fontsize", "italic",
-        "margin", "name", "outline", "outline_w", "primary", "scalex", "scaley", "secondary", "shadow",
-        "shadow_w", "spacing", "strikeout", "underline",
+        "_data",
+        "alignment",
+        "angle",
+        "bold",
+        "borderstyle",
+        "encoding",
+        "font",
+        "fontsize",
+        "italic",
+        "margin",
+        "name",
+        "outline",
+        "outline_w",
+        "primary",
+        "scalex",
+        "scaley",
+        "secondary",
+        "shadow",
+        "shadow_w",
+        "spacing",
+        "strikeout",
+        "underline",
     )
     group = Group.STYLE
 
@@ -121,7 +140,7 @@ class AssStyle:
         self.update_data()
 
     @staticmethod
-    def parse(text: str, version: int = 1) -> "AssStyle":
+    def parse(text: str, version: int = 1) -> AssStyle:
         p = _StyleTokens(text)
         s = AssStyle()
         s.name = p.next_tok()
@@ -172,14 +191,29 @@ class AssStyle:
         self.name = self.name.replace(",", ";")
         self.font = self.font.replace(",", ";")
         fields = [
-            self.name, self.font, format_g(self.fontsize),
-            self.primary.ass_style(), self.secondary.ass_style(),
-            self.outline.ass_style(), self.shadow.ass_style(),
-            str(-1 if self.bold else 0), str(-1 if self.italic else 0),
-            str(-1 if self.underline else 0), str(-1 if self.strikeout else 0),
-            format_g(self.scalex), format_g(self.scaley), format_g(self.spacing), format_g(self.angle),
-            str(self.borderstyle), format_g(self.outline_w), format_g(self.shadow_w), str(self.alignment),
-            str(self.margin[0]), str(self.margin[1]), str(self.margin[2]), str(self.encoding),
+            self.name,
+            self.font,
+            format_g(self.fontsize),
+            self.primary.ass_style(),
+            self.secondary.ass_style(),
+            self.outline.ass_style(),
+            self.shadow.ass_style(),
+            str(-1 if self.bold else 0),
+            str(-1 if self.italic else 0),
+            str(-1 if self.underline else 0),
+            str(-1 if self.strikeout else 0),
+            format_g(self.scalex),
+            format_g(self.scaley),
+            format_g(self.spacing),
+            format_g(self.angle),
+            str(self.borderstyle),
+            format_g(self.outline_w),
+            format_g(self.shadow_w),
+            str(self.alignment),
+            str(self.margin[0]),
+            str(self.margin[1]),
+            str(self.margin[2]),
+            str(self.encoding),
         ]
         self._data = "Style: " + ",".join(fields)
 
@@ -191,8 +225,19 @@ _dialogue_ids = itertools.count(1)
 
 
 class AssDialogue:
-    __slots__ = ("actor", "comment", "effect", "end", "extradata_ids", "id", "layer", "margin", "start",
-                 "style", "text")
+    __slots__ = (
+        "actor",
+        "comment",
+        "effect",
+        "end",
+        "extradata_ids",
+        "id",
+        "layer",
+        "margin",
+        "start",
+        "style",
+        "text",
+    )
     group = Group.DIALOGUE
 
     def __init__(self) -> None:
@@ -209,7 +254,7 @@ class AssDialogue:
         self.extradata_ids: list[int] = []
 
     @staticmethod
-    def parse(raw: str) -> "AssDialogue":
+    def parse(raw: str) -> AssDialogue:
         d = AssDialogue()
         if raw.startswith("Dialogue:"):
             d.comment = False
@@ -250,13 +295,24 @@ class AssDialogue:
     def entry_data(self) -> str:
         parts = [
             "Comment: " if self.comment else "Dialogue: ",
-            str(self.layer), ",",
-            ass_formatted(self.start), ",",
-            ass_formatted(self.end), ",",
-            self.style.replace(",", ";"), ",",
-            self.actor.replace(",", ";"), ",",
-            str(self.margin[0]), ",", str(self.margin[1]), ",", str(self.margin[2]), ",",
-            self.effect.replace(",", ";"), ",",
+            str(self.layer),
+            ",",
+            ass_formatted(self.start),
+            ",",
+            ass_formatted(self.end),
+            ",",
+            self.style.replace(",", ";"),
+            ",",
+            self.actor.replace(",", ";"),
+            ",",
+            str(self.margin[0]),
+            ",",
+            str(self.margin[1]),
+            ",",
+            str(self.margin[2]),
+            ",",
+            self.effect.replace(",", ";"),
+            ",",
         ]
         if self.extradata_ids:
             parts.append("{" + "".join(f"={i}" for i in self.extradata_ids) + "}")

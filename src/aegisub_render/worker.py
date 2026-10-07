@@ -11,7 +11,7 @@ from pathlib import Path
 from aegisub_render.ass.file import AssFile
 from aegisub_render.host.script import HostConfig, Macro, RunStatus, ScriptHost, ScriptInfo, ScriptLoadError
 from aegisub_render.lua.state import LuaError
-from aegisub_render.output import Output
+from aegisub_render.output import Output, use_utf8_for_pipes
 from aegisub_render.paths import AegisubPaths
 from aegisub_render.video.context import VideoContext
 
@@ -84,8 +84,8 @@ def _pick_macro(info: ScriptInfo, name: str) -> Macro:
     raise JobError(f"script has no macro named {name!r}; available macros: {available}")
 
 
-def execute(job: Job) -> Result:
-    out = Output(quiet=job.quiet, progress=job.progress)
+def execute(job: Job, out: Output | None = None) -> Result:
+    out = out or Output(quiet=job.quiet, progress=job.progress)
     paths = AegisubPaths(dict(job.path_tokens))
     cfg = HostConfig(
         script_path=job.script_path,
@@ -108,11 +108,17 @@ def execute(job: Job) -> Result:
             out.message(f"Warning in Automation script '{job.script_path.stem}':\n{w}")
 
         if job.list_only:
-            return Result("ok", features=FeatureList(
-                info.name, info.description, info.author, info.version,
-                [(m.name, m.help) for m in info.macros],
-                [(f.name, f.description, f.priority) for f in info.filters],
-            ))
+            return Result(
+                "ok",
+                features=FeatureList(
+                    info.name,
+                    info.description,
+                    info.author,
+                    info.version,
+                    [(m.name, m.help) for m in info.macros],
+                    [(f.name, f.description, f.priority) for f in info.filters],
+                ),
+            )
 
         if job.filter is not None:
             flt = next((f for f in info.filters if f.name == job.filter), None)
@@ -124,12 +130,14 @@ def execute(job: Job) -> Result:
             macro = _pick_macro(info, job.macro or "")
             rows, active = _select_rows(job.ass, job.selection)
             if macro.has_validate and not job.force and not host.validate_macro(macro, rows, active):
-                return Result("error", f"the validation function of macro {macro.name!r} returned false "
-                              "(Aegisub would grey it out); use --force to run it anyway")
+                return Result(
+                    "error",
+                    f"the validation function of macro {macro.name!r} returned false "
+                    "(Aegisub would grey it out); use --force to run it anyway",
+                )
             status = host.run_macro(macro, rows, active)
 
-        result = Result(str(status), memory_peak=host.state.memory_peak,
-                        memory_limit_hit=host.state.memory_limit_hit)
+        result = Result(str(status), memory_peak=host.state.memory_peak, memory_limit_hit=host.state.memory_limit_hit)
         if status is RunStatus.OK:
             result.ass = job.ass
         elif status is RunStatus.ERROR and host.state.memory_limit_hit:
@@ -146,6 +154,7 @@ def execute(job: Job) -> Result:
 
 
 def worker_main(conn: Connection, job: Job) -> None:
+    use_utf8_for_pipes()
     try:
         result = execute(job)
     except BaseException as e:  # report anything, including crashes in the host itself

@@ -1,0 +1,20 @@
+﻿[Script Info]
+Title: aegisub-render test case 09-furigana
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Yu Gothic,60,&H007E8BAB,&H002B5F9A,&H0082C021,&H802E0156,0,0,0,0,100,100,0,0,1,3,0,5,10,20,10,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,template syl,{\an5\pos($scenter,$smiddle)\fad(100,100)}
+Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,template furi,{\an5\pos($scenter,$smiddle)\fad(100,100)\1c&HC0C0FF&}
+Dialogue: 0,0:00:01.50,0:00:03.90,Default,,0,0,0,karaoke,{\k15}星|ほ{\k15}#|し{\k20}空|そ{\k15}#|ら{\k20}ち{\k15}光|ひ{\k30}#|か{\k30}#|り{\k30}空|そ{\k20}#|ら{\k30}か
+Dialogue: 0,0:00:04.70,0:00:07.10,Default,,0,0,0,karaoke,{\k15}花|は{\k20}#|な{\k15}空|そ{\k20}#|ら{\k30}か{\k15}心|こ{\k30}#|こ{\k30}#|ろ{\k30}き{\k15}星|ほ{\k20}#|し
+Dialogue: 0,0:00:07.90,0:00:10.50,Default,,0,0,0,karaoke,{\k20}空|そ{\k30}#|ら{\k30}ひ{\k15}花|は{\k15}#|な{\k20}ね{\k20}花|は{\k30}#|な{\k20}と{\k20}夢|ゆ{\k20}#|め{\k20}と
