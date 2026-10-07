@@ -1,6 +1,8 @@
 # Python
 __pycache__/
 *.py[cod]
+# ...except the extension modules built by native/build.py, which are committed
+!/aegisub_render/**/*.pyd
 .venv/
 .pytest_cache/
 .ruff_cache/
@@ -10,7 +12,7 @@ dist/
 # Aegisub v3.5.0 source snapshot (reference only; see README)
 /reference/
 
-# native build tree (the resulting DLL under src/aegisub_render/_native/ IS committed)
+# native build tree (the .pyd files copied into aegisub_render/ ARE committed)
 /native/builddir/
 /native/subprojects/LuaJIT-*/
 /native/subprojects/packagecache/

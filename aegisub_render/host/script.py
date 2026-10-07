@@ -8,10 +8,9 @@ from pathlib import Path
 
 from aegisub_render.ass.entries import AssStyle
 from aegisub_render.ass.file import AssFile
-from aegisub_render.host.impls import FfiImpls
+from aegisub_render.host import impls
 from aegisub_render.host.subs import Flat, SubsSession, as_flat, entry_from_flat
 from aegisub_render.host.text_extents import TextExtents, register_private_fonts
-from aegisub_render.lua.capi import LuaAPI
 from aegisub_render.lua.state import NIL, LuaError, LuaRef, LuaState, PyFunc, PyFunction, ScriptError
 from aegisub_render.output import Output
 from aegisub_render.paths import AegisubPaths, join
@@ -100,9 +99,7 @@ class ScriptHost:
         self.ass = ass
         self.video = video
         self.out = out
-        self.api = LuaAPI()
-        self.state = LuaState(self.api, cfg.memory_limit)
-        self.impls = FfiImpls(self.api)
+        self.state = LuaState(cfg.memory_limit)
         self.text_extents = TextExtents()
         self.sessions: dict[int, SubsSession] = {}
         self._next_sid = 1
@@ -119,11 +116,7 @@ class ScriptHost:
             "moonscript_path": str(support),
             "moonscript_fallback": str(Path(str(resources.files("aegisub_render.host") / "lua" / "moonscript.lua"))),
             "trace_level": cfg.trace_level,
-            "impls": {
-                "re": self.impls.re_spec().to_lua(),
-                "unicode": self.impls.unicode_spec().to_lua(),
-                "lfs": self.impls.lfs_spec().to_lua(),
-            },
+            "impls": impls.install(),
         }
         code = (resources.files("aegisub_render.host") / "lua" / "bootstrap.lua").read_bytes()
         chunk = self.state.load(code, BOOTSTRAP_CHUNKNAME)

@@ -12,27 +12,30 @@
 
 ## 需求
 
-- Windows x64（`text_extents` 用 GDI，Lua 執行環境是 Windows DLL）
+- Windows x64（`text_extents` 用 GDI；兩個 Cython 擴充模組是為 CPython 3.14 / win_amd64 編譯的）
 - Python 3.14、[uv](https://docs.astral.sh/uv/)
 - Aegisub 3.5.0 安裝目錄（預設 `C:\Program Files\Aegisub`）
 
 ```powershell
 uv sync
-uv run aegisub-render render input.ass -o output.ass
+uv run aegisub-render.py render input.ass -o output.ass
 ```
+
+本專案不安裝成套件（`package = false`），從 repo 執行：`aegisub-render.py` 會把 repo 加進 `sys.path`，
+所以在任何工作目錄都能用；在 repo 根目錄也可以 `uv run python -m aegisub_render ...`。
 
 ## 使用方式
 
 ```powershell
 # 用 kara-templater 套用模板（等同 Automation > Apply karaoke template，然後存檔）
-uv run aegisub-render render song.ass -o song.fx.ass
+uv run aegisub-render.py render song.ass -o song.fx.ass
 
 # 其他腳本 / 巨集 / 匯出濾鏡
-uv run aegisub-render render in.ass -o out.ass --script strip-tags.lua --macro "Strip tags" --select 1,3-5
-uv run aegisub-render render in.ass -o out.ass --filter "Karaoke template"
+uv run aegisub-render.py render in.ass -o out.ass --script strip-tags.lua --macro "Strip tags" --select 1,3-5
+uv run aegisub-render.py render in.ass -o out.ass --filter "Karaoke template"
 
 # 列出腳本註冊的巨集與匯出濾鏡
-uv run aegisub-render list in.ass --script kara-templater.lua
+uv run aegisub-render.py list in.ass --script kara-templater.lua
 ```
 
 `--script` 不是路徑時，依序在 `?user`、`?data` 的 autoload 目錄找（與 Aegisub 的 `Path/Automation/Autoload` 設定相同）。
@@ -57,6 +60,8 @@ uv run aegisub-render list in.ass --script kara-templater.lua
 | `--refresh-cache`、`--no-cache` | 影片資訊快取（`%TEMP%\aegisub-render\<sha256>.json`） |
 
 ### Python API
+
+repo 根目錄需要在 `sys.path` 上（例如在 repo 根目錄執行，或自行 `sys.path.insert`）：
 
 ```python
 from pathlib import Path
@@ -131,18 +136,31 @@ uv run ruff check
 `tests/aegisub/` 同名檔案。之後 `tests/test_cases.py` 會改為和它逐位元組比對（只忽略記錄 GUI 狀態的
 `Scroll Position`、`Active Line`、`Video Position`、`Video Zoom Percent` 四行）。
 
-## 重新建置原生 DLL
+## 原生模組
 
-`src/aegisub_render/_native/aegisub_lua.dll` 已附在 repo 裡。要自己重建（需要 Visual Studio 2022 的 x64 C++ 工具）：
+兩個 Cython 擴充模組，原始碼與編譯好的 `.pyd` 都在 repo 裡：
+
+| 模組 | 內容 |
+|---|---|
+| `aegisub_render/lua/_luajit`（`.pyx` / `.pxd` / `.pyi`） | 靜態連結的 LuaJIT + lpeg + luabins + shim，以及 Python 綁定：`LuaState`、把 Python 函式變成 Lua C 函式的 dispatcher、`aegisub.re/unicode/lfs` 背後的 C 函式表 |
+| `aegisub_render/host/_gdi`（`.pyx` / `.pxd` / `.pyi`） | `text_extents` 用的 GDI 量測 |
+
+`.pxd` 是 C 宣告（LuaJIT API、shim、windows.h），`.pyi` 給型別檢查器。Python 函式以真正的 `lua_CFunction`
+提供給 Lua：呼叫 Python 的部分一定正常返回，若要報錯，回到沒有 Python 狀態的 C 函式後才 `lua_error`，
+因此 Lua 錯誤不會穿越持有 Python 狀態的 frame。比 ctypes 版快約 3 倍（`template syl`+`template char`、
+300 行 × 10 音節：2.83 s → 0.98 s，輸出逐位元組相同）。
+
+要自己重建（需要 Visual Studio 2022 的 x64 C++ 工具）：
 
 ```powershell
 uv run --group build python native/build.py
 ```
 
-`native/` 的 meson 專案照抄 Aegisub v3.5.0：`subprojects/luajit.wrap`（同一個原始碼與 wrapdb patch 的 sha256）、
-`subprojects/luabins/`、`libaegisub/lua/modules/lpeg.c`，選項與 Aegisub 相同（static、amalgam、lua52compat、
-release、動態 CRT）；`build.py` 會先檢查這些檔案的 sha256 與 v3.5.0 一致。唯一新增的是 `src/shim.c`
-（限制記憶體的 allocator、panic handler、preload lpeg/luabins），並把全部連結成一個 DLL 供 ctypes 載入。
+根目錄的 `meson.build`（subproject 放在 `native/subprojects/`）照抄 Aegisub v3.5.0：`luajit.wrap`
+（同一個原始碼與 wrapdb patch 的 sha256）、`luabins/`、`libaegisub/lua/modules/lpeg.c`，選項與 Aegisub 相同
+（static、amalgam、lua52compat、release、動態 CRT）；`build.py` 會先檢查這些檔案的 sha256 與 v3.5.0 一致，
+編好後把 `.pyd` 複製進套件目錄。新增的只有 `native/src/shim.c`（限制記憶體的 allocator、panic handler、
+preload lpeg/luabins、照抄 `agi::lua::error`/`argerror` 的報錯函式）與兩個 Cython 模組。
 LuaJIT 官方不提供二進位檔，其他來源（MSYS2、conda-forge）的版本與編譯選項都和 Aegisub 不同。
 
 ## 與 Aegisub 的已知差異
@@ -156,6 +174,8 @@ LuaJIT 官方不提供二進位檔，其他來源（MSYS2、conda-forge）的版
 - `Scroll Position` 等 GUI 狀態沿用輸入檔的值（在 Aegisub 裡存檔時會是當下的 GUI 狀態）。
 - 刻意保留 3.5.0 的行為：`subs.delete(a, b, c)` 只刪除最後一個參數指定的行、`subs[i] = nil` 會報錯、
   `lfs.attributes(...).modification` 是自 1601 年起算的秒數。
+- 錯誤訊息的位置：Aegisub 以 `agi::lua::error()` 丟出的錯誤會加上呼叫端位置（`luaL_where(L, 1)`），
+  由 C++ 例外轉成的錯誤（例如欄位缺漏的 `BadField`）則沒有；兩者都照樣重現。
 - 刻意修正的 3.5.0 問題：`require` 的 MoonScript 模組編譯失敗時回報真正的錯誤（3.5.0 會變成「找不到模組」），
   模組載入錯誤訊息包含實際錯誤而非模組名稱。
 

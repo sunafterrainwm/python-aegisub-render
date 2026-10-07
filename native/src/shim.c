@@ -2,11 +2,8 @@
  * aegisub-render native shim.
  *
  * Everything Aegisub itself does in C before handing control to Lua code lives in
- * libaegisub/lua/modules.cpp (preload_modules); this file is the equivalent for a
- * host that drives LuaJIT through ctypes, plus a memory-limited allocator.
- *
- * Python must never let a Lua error unwind through its own frames, so every function
- * here either cannot raise a Lua error or is meant to be called through lua_cpcall.
+ * libaegisub/lua/modules.cpp (preload_modules) and libaegisub/lua/utils.cpp (error helpers);
+ * this file is the equivalent for the Cython host, plus a memory-limited allocator.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +13,7 @@
 #include "lauxlib.h"
 #include "lualib.h"
 
-#define AEGI_API __declspec(dllexport)
+#include "shim.h"
 
 int luaopen_lpeg(lua_State *L);
 int luaopen_luabins(lua_State *L);
@@ -25,7 +22,7 @@ typedef struct AegiAlloc {
 	size_t used;      /* bytes currently allocated by the Lua state */
 	size_t peak;      /* high-water mark of used */
 	size_t limit;     /* 0 = unlimited */
-	int suspended;    /* > 0 while Python callbacks run: never fail allocations there */
+	int suspended;    /* > 0 while Python code runs: never fail allocations there */
 	int limit_hit;    /* set when an allocation was refused because of the limit */
 } AegiAlloc;
 
@@ -66,7 +63,7 @@ static int aegi_panic(lua_State *L)
 }
 
 /* Create a Lua state whose heap is capped at `limit` bytes (0 = unlimited). */
-AEGI_API lua_State *aegi_newstate(size_t limit)
+lua_State *aegi_newstate(size_t limit)
 {
 	lua_State *L;
 	AegiAlloc *a = (AegiAlloc *)calloc(1, sizeof(AegiAlloc));
@@ -82,7 +79,7 @@ AEGI_API lua_State *aegi_newstate(size_t limit)
 	return L;
 }
 
-AEGI_API void aegi_close(lua_State *L)
+void aegi_close(lua_State *L)
 {
 	void *ud = NULL;
 	lua_getallocf(L, &ud);
@@ -97,7 +94,7 @@ static AegiAlloc *get_alloc(lua_State *L)
 	return (AegiAlloc *)ud;
 }
 
-AEGI_API void aegi_suspend_limit(lua_State *L, int suspend)
+void aegi_suspend_limit(lua_State *L, int suspend)
 {
 	AegiAlloc *a = get_alloc(L);
 	a->suspended += suspend ? 1 : -1;
@@ -105,17 +102,16 @@ AEGI_API void aegi_suspend_limit(lua_State *L, int suspend)
 		a->suspended = 0;
 }
 
-AEGI_API size_t aegi_memory_used(lua_State *L) { return get_alloc(L)->used; }
-AEGI_API size_t aegi_memory_peak(lua_State *L) { return get_alloc(L)->peak; }
-AEGI_API size_t aegi_memory_limit(lua_State *L) { return get_alloc(L)->limit; }
-AEGI_API int aegi_memory_limit_hit(lua_State *L) { return get_alloc(L)->limit_hit; }
+size_t aegi_memory_used(lua_State *L) { return get_alloc(L)->used; }
+size_t aegi_memory_peak(lua_State *L) { return get_alloc(L)->peak; }
+int aegi_memory_limit_hit(lua_State *L) { return get_alloc(L)->limit_hit; }
 
 /*
  * Equivalent of agi::lua::preload_modules(), minus the parts that need aegisub.exe
- * (aegisub.__re_impl etc. are supplied by the Python host through the ffi).
+ * (aegisub.__re_impl etc. are supplied by the host through the ffi).
  * Must be called through lua_cpcall.
  */
-AEGI_API int aegi_openlibs(lua_State *L)
+int aegi_openlibs(lua_State *L)
 {
 	luaL_openlibs(L);
 
@@ -132,7 +128,31 @@ AEGI_API int aegi_openlibs(lua_State *L)
 	return 0;
 }
 
-/* Allocation helpers for strings handed to Lua through the ffi; the Lua side frees
- * them with ffi.C.free, which resolves to this module's CRT. */
-AEGI_API void *aegi_malloc(size_t size) { return malloc(size); }
-AEGI_API void aegi_free(void *ptr) { free(ptr); }
+/*
+ * agi::lua::error() for a message already on the stack: prefix it with the position of the
+ * Lua code that called the running C function (luaL_where(L, 1)) and raise it.
+ */
+int aegi_error(lua_State *L)
+{
+	luaL_where(L, 1);
+	lua_insert(L, -2);
+	lua_concat(L, 2);
+	return lua_error(L);
+}
+
+/* agi::lua::argerror(), which raises through agi::lua::error(). */
+int aegi_argerror(lua_State *L, int narg, const char *extramsg)
+{
+	lua_Debug ar;
+	if (!lua_getstack(L, 0, &ar)) {
+		lua_pushfstring(L, "bad argument #%d (%s)", narg, extramsg);
+		return aegi_error(L);
+	}
+	lua_getinfo(L, "n", &ar);
+	if (ar.namewhat && strcmp(ar.namewhat, "method") == 0 && --narg == 0) {
+		lua_pushfstring(L, "calling '%s' on bad self (%s)", ar.name ? ar.name : "?", extramsg);
+		return aegi_error(L);
+	}
+	lua_pushfstring(L, "bad argument #%d to '%s' (%s)", narg, ar.name ? ar.name : "?", extramsg);
+	return aegi_error(L);
+}

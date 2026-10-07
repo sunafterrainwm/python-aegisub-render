@@ -3,9 +3,8 @@
 -- Lua-side half of the Automation 4 host. This reproduces what Aegisub 3.5.0 does in C++
 -- (src/auto4_lua.cpp, auto4_lua_assfile.cpp, auto4_lua_progresssink.cpp and
 -- libaegisub/lua/{script_reader,utils,modules}.cpp); the Python side only stores data and
--- talks to the operating system. Every Python function arrives as a raw dispatcher closure
--- returning `true, results...` or `false, message`, and is wrapped below so that failures
--- become ordinary Lua errors raised from Lua code.
+-- talks to the operating system. Python functions arrive as C functions (see lua/_luajit.pyx)
+-- that raise their errors themselves.
 --
 -- This chunk runs with the full standard library; everything it needs is captured in locals
 -- before the global environment is sandboxed.
@@ -28,32 +27,31 @@ local floor, ceil, min = math.floor, math.ceil, math.min
 local getinfo, traceback = debug.getinfo, debug.traceback
 local ffi = require("ffi")
 
------------------------------------------------------------------------------- Python bridge
-
-local function finish(ok, ...)
-	if ok then return ... end
-	error((...), 0)
-end
-
-local P = {}
-for name, raw in pairs(py) do
-	P[name] = function(...) return finish(raw(...)) end
-end
+local P = py
 
 ------------------------------------------------------------------------------ C-style argument errors
 
+-- The Lua functions below stand in for Aegisub's C functions. `level` arguments give the stack
+-- level of that API function as seen from the caller of the helper (1 = the helper's caller).
+
+-- agi::lua::error(): luaL_where(L, 1) inside a C function is the position of the Lua code that
+-- called it, so the message is prefixed with the position of whoever called the API function.
+-- (Errors Aegisub raises from C++ exceptions carry no position; those use error(msg, 0).)
+local function api_error(level, msg)
+	error(msg, level + 2)
+end
+
 -- agi::lua::argerror: the function name comes from how the caller called the API function.
--- `level` is the stack level of that API function as seen from the caller of argerror.
 local function argerror(level, narg, extramsg)
 	local ar = getinfo(level + 1, "n")
 	local name = ar and ar.name or "?"
 	if ar and ar.namewhat == "method" then
 		narg = narg - 1
 		if narg == 0 then
-			error(sformat("calling '%s' on bad self (%s)", name, extramsg), 0)
+			error(sformat("calling '%s' on bad self (%s)", name, extramsg), level + 2)
 		end
 	end
-	error(sformat("bad argument #%d to '%s' (%s)", narg, name, extramsg), 0)
+	error(sformat("bad argument #%d to '%s' (%s)", narg, name, extramsg), level + 2)
 end
 
 local function typename_at(n, ...)
@@ -468,11 +466,11 @@ _G.include = function(...)
 		end
 	end
 	if not filepath or not P.file_exists(filepath) then
-		error(sformat("Lua include not found: %s", filename), 0)
+		api_error(1, sformat("Lua include not found: %s", filename))
 	end
 	local f, err = load_file(filepath)
 	if not f then
-		error(sformat('Error loading Lua include "%s":\n%s', filename, tostring(err)), 0)
+		api_error(1, sformat('Error loading Lua include "%s":\n%s', filename, tostring(err)))
 	end
 	return f()
 end
@@ -516,12 +514,13 @@ local function lua_tostring_or_default(v)
 	return "<not a string>"
 end
 
--- Returns a flat array describing the entry: { class, fields... }
-local function to_entry(t)
-	if type(t) ~= "table" then error("Can't convert a non-table value to AssEntry", 0) end
+-- Returns a flat array describing the entry: { class, fields... }. Missing fields are reported
+-- like Aegisub's BadField exception (no position); the other errors come from agi::lua::error.
+local function to_entry(level, t)
+	if type(t) ~= "table" then api_error(level + 1, "Can't convert a non-table value to AssEntry") end
 	local cls = t.class
 	if type(cls) ~= "string" and type(cls) ~= "number" then
-		error("Table lacks 'class' field, can't convert to AssEntry", 0)
+		api_error(level + 1, "Table lacks 'class' field, can't convert to AssEntry")
 	end
 	cls = slower(tostring(cls))
 	if cls == "info" then
@@ -563,13 +562,13 @@ local function to_entry(t)
 			end
 			e[13] = kv
 		elseif te ~= "nil" then
-			error("dialogue extradata must be a table", 0)
+			api_error(level + 1, "dialogue extradata must be a table")
 		else
 			e[13] = false
 		end
 		return e
 	end
-	error(sformat("Found line with unknown class: %s", cls), 0)
+	api_error(level + 1, sformat("Found line with unknown class: %s", cls))
 end
 
 local function build_line(cls, section, raw, ...)
@@ -640,16 +639,17 @@ local aegisub = {}
 
 local function make_subs(sid, can_modify, can_set_undo)
 	local state = { valid = true }
+	-- these three are always called directly by the API function
 	local function check_valid()
-		if not state.valid then error("Subtitles object is no longer valid", 0) end
+		if not state.valid then api_error(2, "Subtitles object is no longer valid") end
 	end
 	local function check_modify()
-		if not can_modify then error("Attempt to modify subtitles in read-only feature context.", 0) end
+		if not can_modify then api_error(2, "Attempt to modify subtitles in read-only feature context.") end
 	end
 	local function check_bounds(idx)
 		local n = P.subs_count(sid)
 		if idx <= 0 or idx > n then
-			error(sformat("Requested out-of-range line from subtitle file: %d", idx), 0)
+			api_error(2, sformat("Requested out-of-range line from subtitle file: %d", idx))
 		end
 	end
 	local function read_line(idx)
@@ -659,7 +659,7 @@ local function make_subs(sid, can_modify, can_set_undo)
 	-- `level` arguments below are relative to the user-visible function
 	local function do_append(level, first_narg, ...)
 		for i = 1, select("#", ...) do
-			P.subs_append(sid, to_entry((select(i, ...))))
+			P.subs_append(sid, to_entry(level + 1, (select(i, ...))))
 		end
 	end
 
@@ -674,7 +674,7 @@ local function make_subs(sid, can_modify, can_set_undo)
 		end
 		local entries = {}
 		for i = 1, select("#", ...) do
-			entries[i] = to_entry((select(i, ...)))
+			entries[i] = to_entry(level + 1, (select(i, ...)))
 		end
 		P.subs_insert(sid, before, entries)
 	end
@@ -746,9 +746,9 @@ local function make_subs(sid, can_modify, can_set_undo)
 			if k == "n" then return P.subs_count(sid) end
 			local m = methods[k]
 			if m then return m end
-			error(sformat("Invalid indexing in Subtitle File object: '%s'", k), 0)
+			api_error(1, sformat("Invalid indexing in Subtitle File object: '%s'", k))
 		end
-		error(sformat("Attempt to index a Subtitle File object with value of type '%s'.", tk), 0)
+		api_error(1, sformat("Attempt to index a Subtitle File object with value of type '%s'.", tk))
 	end
 	mt.__newindex = function(self, k, v)
 		check_valid()
@@ -763,7 +763,7 @@ local function make_subs(sid, can_modify, can_set_undo)
 			do_append(1, 1, v)
 		elseif v ~= nil then
 			check_bounds(n)
-			P.subs_assign(sid, n, to_entry(v))
+			P.subs_assign(sid, n, to_entry(1, v))
 		else
 			-- Aegisub 3.5.0 removes the object and the index before delegating to delete,
 			-- leaving only the nil value on the stack
@@ -788,7 +788,7 @@ local function make_subs(sid, can_modify, can_set_undo)
 	aegisub.parse_karaoke_data = function(...)
 		check_valid()
 		local n = select("#", ...)
-		local entry = to_entry((select(n, ...)))
+		local entry = to_entry(1, (select(n, ...)))
 		if entry[1] ~= "dialogue" then
 			argerror(1, 1, "Subtitle line must be a dialogue line")
 		end
@@ -811,7 +811,7 @@ local function make_subs(sid, can_modify, can_set_undo)
 	aegisub.set_undo_point = function(...)
 		check_valid()
 		if not can_set_undo then
-			error("Attempt to set an undo point in a context where it makes no sense to do so.", 0)
+			api_error(1, "Attempt to set an undo point in a context where it makes no sense to do so.")
 		end
 		if P.subs_modified(sid) then
 			local msg = check_string(1, 1, ...)
@@ -834,11 +834,11 @@ aegisub.register_macro = function(...)
 	if type(help) == "number" then help = tostring(help) end
 	if type(help) ~= "string" then help = "" end
 	local fn_run, fn_validate, fn_active = select(3, ...)
-	if type(fn_run) ~= "function" then error("The macro processing function must be a function", 0) end
+	if type(fn_run) ~= "function" then api_error(1, "The macro processing function must be a function") end
 	local cmd_name = sformat("automation/lua/%s/%s", cfg.script_stem, display)
 	for _, m in ipairs(macros) do
 		if m.cmd_name == cmd_name then
-			error(sformat("A macro named '%s' is already defined in script '%s'", display, script_display_name), 0)
+			api_error(1, sformat("A macro named '%s' is already defined in script '%s'", display, script_display_name))
 		end
 	end
 	macros[#macros + 1] = {
@@ -855,7 +855,7 @@ aegisub.register_filter = function(...)
 	if type(description) ~= "string" then description = "" end
 	local priority = tointeger((select(3, ...)))
 	local fn_run, fn_config = select(4, ...)
-	if type(fn_run) ~= "function" then error("The filter processing function must be a function", 0) end
+	if type(fn_run) ~= "function" then api_error(1, "The filter processing function must be a function") end
 	filters[#filters + 1] = {
 		name = name, description = description, priority = priority, run = fn_run,
 		config = type(fn_config) == "function" and fn_config or nil,
@@ -868,10 +868,10 @@ aegisub.text_extents = function(...)
 	if type(text) ~= "string" and type(text) ~= "number" then argerror(1, 2, "") end
 	local cls = style.class
 	if (type(cls) ~= "string" and type(cls) ~= "number") or slower(tostring(cls)) ~= "style" then
-		error("Not a style entry", 0)
+		api_error(1, "Not a style entry")
 	end
-	local entry = to_entry(style)
-	if entry[1] ~= "style" then error("Not a style entry", 0) end
+	local entry = to_entry(1, style)
+	if entry[1] ~= "style" then api_error(1, "Not a style entry") end
 	return P.text_extents(entry, tostring(text))
 end
 
@@ -926,7 +926,7 @@ local function debug_out(...)
 	if n - start + 1 > 1 then
 		local fmt = _G.string.format
 		local ok, res = pcall(fmt, select(start, ...))
-		if not ok then error(res, 0) end
+		if not ok then api_error(1, res) end
 		msg = res
 	elseif n >= start then
 		msg = (select(start, ...))

@@ -180,9 +180,11 @@ def test_subtitles_object(run_lua: RunLua) -> None:
             subs[0] = new
             subs[-first_dialogue] = new
             local ok, err = pcall(function() return subs[999] end)
-            check(not ok and err == "Requested out-of-range line from subtitle file: 999", tostring(err))
+            -- agi::lua::error prefixes the position of the Lua code that called the C function
+            local here = '^%[string "[^"]*"%]:%d+: '
+            check(not ok and err:find(here .. "Requested out%-of%-range line from subtitle file: 999$"), tostring(err))
             ok, err = pcall(function() return subs.nope end)
-            check(not ok and err == "Invalid indexing in Subtitle File object: 'nope'", tostring(err))
+            check(not ok and err:find(here .. "Invalid indexing in Subtitle File object: 'nope'$"), tostring(err))
             ok, err = pcall(subs.append, { class = "bogus" })
             check(not ok and err == "Found line with unknown class: bogus", tostring(err))
             ok, err = pcall(subs.append, { class = "dialogue" })
@@ -190,7 +192,7 @@ def test_subtitles_object(run_lua: RunLua) -> None:
             ok, err = pcall(subs.insert, 0, new)
             check(not ok and err == "bad argument #1 to '?' (Out of range line index)", tostring(err))
             ok, err = pcall(function() subs.insert(0, new) end)
-            check(not ok and err == "bad argument #1 to 'insert' (Out of range line index)", tostring(err))
+            check(not ok and err:find(here .. "bad argument #1 to 'insert' %(Out of range line index%)$"), tostring(err))
             subs.delete(#subs)
             subs.deleterange(#subs, #subs)
             aegisub.set_undo_point("x")

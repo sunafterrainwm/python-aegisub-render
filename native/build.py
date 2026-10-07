@@ -1,10 +1,12 @@
-"""Build src/aegisub_render/_native/aegisub_lua.dll the same way Aegisub 3.5.0 builds its Lua runtime.
+"""Build the extension modules described in ../meson.build and copy them into the package.
 
 Usage (from the repository root):
 
     uv run --group build python native/build.py
 
-Requirements: Visual Studio 2022 (or Build Tools) with the C++ x64 toolchain.
+Requirements: Visual Studio 2022 (or Build Tools) with the C++ x64 toolchain; Cython, meson
+and ninja come from the `build` dependency group. Meson runs under this Python, so the modules
+are built for it (CPython 3.14).
 
 Every vendored input is checked against the sha256 it has in the Aegisub v3.5.0 source
 snapshot before building; the LuaJIT source tarball and its meson wrapdb patch are
@@ -22,7 +24,11 @@ from pathlib import Path
 NATIVE = Path(__file__).resolve().parent
 ROOT = NATIVE.parent
 BUILD_DIR = NATIVE / "builddir"
-OUTPUT = ROOT / "src" / "aegisub_render" / "_native" / "aegisub_lua.dll"
+# extension module name -> package directory it is imported from
+MODULES: dict[str, Path] = {
+    "_luajit": ROOT / "aegisub_render" / "lua",
+    "_gdi": ROOT / "aegisub_render" / "host",
+}
 
 # sha256 of the files copied from the Aegisub v3.5.0 source snapshot
 # (https://github.com/TypesettingTools/Aegisub/archive/refs/tags/v3.5.0.zip).
@@ -99,9 +105,7 @@ def msvc_environment() -> dict[str, str]:
 
 
 def meson_command() -> list[str]:
-    exe = shutil.which("meson")
-    if exe:
-        return [exe]
+    # Run meson with this interpreter: import('python').find_installation() then targets it.
     return [sys.executable, "-m", "mesonbuild.mesonmain"]
 
 
@@ -109,18 +113,23 @@ def main() -> None:
     verify_vendored()
     env = msvc_environment()
     meson = meson_command()
+    bin_dir = str(Path(sys.executable).parent)
+    env["PATH"] = bin_dir + os.pathsep + env.get("PATH", "")  # cython and ninja from this environment
     if not (BUILD_DIR / "build.ninja").exists():
         subprocess.run(
             [*meson, "setup", str(BUILD_DIR), "--buildtype=release", "--backend=ninja"],
-            cwd=NATIVE,
+            cwd=ROOT,
             env=env,
             check=True,
         )
-    subprocess.run([*meson, "compile", "-C", str(BUILD_DIR)], cwd=NATIVE, env=env, check=True)
-    built = BUILD_DIR / "aegisub_lua.dll"
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(built, OUTPUT)
-    print(f"{OUTPUT.relative_to(ROOT)}  sha256={sha256(OUTPUT)}")
+    subprocess.run([*meson, "compile", "-C", str(BUILD_DIR)], cwd=ROOT, env=env, check=True)
+    for name, package_dir in MODULES.items():
+        built = [p for p in BUILD_DIR.glob(f"{name}.*.pyd") if p.is_file()]
+        if len(built) != 1:
+            raise SystemExit(f"expected one {name}.*.pyd in {BUILD_DIR}, found {built}")
+        target = package_dir / built[0].name
+        shutil.copy2(built[0], target)
+        print(f"{target.relative_to(ROOT)}  sha256={sha256(target)}")
 
 
 if __name__ == "__main__":

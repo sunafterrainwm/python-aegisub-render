@@ -13,14 +13,18 @@
 ## 原生元件
 
 - 沒有可信來源提供符合需求（commit、`lua52compat`、GC64、lpeg 0.10）的預建 DLL，因此自行建置；
-  建置腳本照抄 Aegisub 的 meson 設定，建置產物與腳本都 commit（`native/`、`src/aegisub_render/_native/`）。
-- 單一 `aegisub_lua.dll`：靜態 LuaJIT + lpeg 0.10 + luabins + shim（與 Aegisub 把它們連進 exe 的方式相同）。
-- Python 端用 ctypes。原則：Lua 錯誤絕不穿越 Python frame。
-  - Python 只呼叫不會拋 Lua 錯誤的 API（stack 操作、push、raw 存取、受保護的 `lua_pcall`/`lua_cpcall`/`luaL_loadbuffer`）；
-    唯一的例外是配置失敗，所以 Python 程式碼執行期間暫停記憶體上限。
-  - Python 函式透過單一 dispatcher 提供給 Lua，回傳 `true, ...` 或 `false, message`，由 Lua 端包裝成 `error(message, 0)`。
-  - dispatcher 的 ctypes 回傳型別必須是 64 位元：ctypes 只寫入 restype 大小的位元組，LuaJIT 卻把整個 RAX 當索引用。
-- `aegisub.re`/`unicode`/`lfs` 保留 Aegisub 原本的 `.moon` 包裝，只把背後的 C 函式表換成 ctypes callback（經由 ffi 呼叫）。
+  建置腳本照抄 Aegisub 的 meson 設定，建置產物與腳本都 commit（根目錄 `meson.build`、`native/`、套件內的 `.pyd`）。
+- 綁定用 Cython（`.pyx` 實作、`.pxd` C 宣告、`.pyi` 型別）：`_luajit` 擴充模組靜態連結 LuaJIT + lpeg 0.10 + luabins + shim
+  （與 Aegisub 把它們連進 exe 的方式相同）；`_gdi` 做 `text_extents` 的 GDI 量測。
+  最初的 ctypes 版本慢約 3 倍，且 ctypes callback 的 `int` 回傳值只寫入 4 個位元組，LuaJIT 卻把整個 RAX 當索引用。
+- 原則：Lua 錯誤絕不穿越持有 Python 狀態的 frame。
+  - 面向 Python 的方法只呼叫不會拋 Lua 錯誤的 API（stack 操作、push、raw 存取、受保護的
+    `lua_pcall`/`lua_cpcall`/`luaL_loadbuffer`）；唯一的例外是配置失敗，所以 Python 程式碼執行期間暫停記憶體上限。
+  - Python 函式以 `lua_CFunction` 提供給 Lua：`with gil` 區塊呼叫 Python 並一定正常返回，回到沒有 Python 狀態的
+    C 程式碼後才依結果 `lua_error`（`agi::lua::error` 會加呼叫端位置，C++ 例外則不加，兩種都重現）。
+- `aegisub.re`/`unicode`/`lfs` 保留 Aegisub 原本的 `.moon` 包裝，只把背後的 C 函式表換成 `_luajit.pyx` 裡同簽名的
+  C 函式（經由 ffi 呼叫），邏輯在 `host/impls.py`。
+- 專案不安裝成套件（`package = false`、沒有 `src/` 層），由根目錄的 `aegisub-render.py` 啟動。
   錯誤經 `char **err` 傳回，回傳字串以同一個 CRT 的 `malloc` 配置，`ffi.C.free` 可正確釋放。
 
 ## Lua host

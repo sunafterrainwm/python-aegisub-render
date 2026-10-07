@@ -21,9 +21,12 @@ TEMPLATE_ASS = MINIMAL_ASS.replace(
 )
 
 
+ROOT = Path(__file__).resolve().parent.parent
+
+
 def cli(*args: str, timeout: float = 120) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-m", "aegisub_render", *args],
+        [sys.executable, str(ROOT / "aegisub-render.py"), *args],
         capture_output=True,
         text=True,
         encoding="utf-8",

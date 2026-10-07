@@ -9,9 +9,6 @@ dependencies = [
     "regex>=2024.11.6",
 ]
 
-[project.scripts]
-aegisub-render = "aegisub_render.cli:main"
-
 [dependency-groups]
 dev = [
     "basedpyright>=1.29",
@@ -19,18 +16,14 @@ dev = [
     "ruff>=0.11",
 ]
 build = [
+    "cython>=3.1",
     "meson>=1.6",
     "ninja>=1.11",
 ]
 
-[build-system]
-requires = ["hatchling>=1.27"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/aegisub_render"]
-
 [tool.uv]
+# Not an installable package: run it from the repository (aegisub-render.py / python -m aegisub_render).
+package = false
 default-groups = ["dev"]
 
 [tool.ruff]
@@ -57,7 +50,7 @@ ignore = [
 [tool.basedpyright]
 pythonVersion = "3.14"
 typeCheckingMode = "strict"
-include = ["src", "tests", "scripts", "config.py", "native/build.py"]
+include = ["aegisub_render", "tests", "scripts", "config.py", "native/build.py", "aegisub-render.py"]
 exclude = ["reference", "native/subprojects", "**/__pycache__"]
 reportAny = false
 reportExplicitAny = false
@@ -67,6 +60,7 @@ reportPrivateUsage = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 # LuaJIT raises every Lua error (even ones caught by pcall) as a Windows SEH exception with code
 # 0xE24C4A0x; pytest's faulthandler plugin would print a "fatal exception" report for each one.
 addopts = "-ra -p no:faulthandler"

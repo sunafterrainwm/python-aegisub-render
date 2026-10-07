@@ -9,7 +9,7 @@ from typing import cast
 
 from aegisub_render.paths import AegisubPaths
 
-REPO_CONFIG = Path(__file__).resolve().parents[2] / "config.py"
+REPO_CONFIG = Path(__file__).resolve().parents[1] / "config.py"
 
 
 class ConfigError(Exception):
