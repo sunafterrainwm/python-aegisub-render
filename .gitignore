@@ -17,6 +17,9 @@ dist/
 /native/subprojects/LuaJIT-*/
 /native/subprojects/packagecache/
 
+# built by scripts/build_exe.py; holds this machine's absolute paths
+/aegisub-render.exe
+
 # test scratch output
 /tests/_out/
 /native/subprojects/.wraplock

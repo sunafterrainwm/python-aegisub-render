@@ -24,6 +24,18 @@ uv run aegisub-render.py render input.ass -o output.ass
 本專案不安裝成套件（`package = false`），從 repo 執行：`aegisub-render.py` 會把 repo 加進 `sys.path`，
 所以在任何工作目錄都能用；在 repo 根目錄也可以 `uv run python -m aegisub_render ...`。
 
+### aegisub-render.exe
+
+```powershell
+uv run python scripts/build_exe.py            # 產生 repo 根目錄的 aegisub-render.exe（已 gitignore）
+uv run python scripts/build_exe.py -o C:\tools\aegisub-render.exe
+```
+
+這個 `.exe` 等同 `.venv\Scripts\python.exe aegisub-render.py ...`：用的是 pip 放在 console script 前面的同一種
+啟動器（distlib 的 `t64.exe`），後面接上 `#!<python.exe>` 與一個執行 `aegisub-render.py` 的 `__main__.py`。
+結束碼與 Ctrl+C 會原樣傳遞。路徑都是絕對路徑，所以可以複製到 PATH 裡的目錄使用；repo 或 `.venv` 搬家後要重新產生。
+`--python PATH` 可指定別的直譯器。
+
 ## 使用方式
 
 ```powershell
