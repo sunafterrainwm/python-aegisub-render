@@ -114,12 +114,28 @@ def test_existing_output(tmp_path: Path, settings: Settings) -> None:
     assert out.read_text(encoding="utf-8-sig").count(",fx,") == 5
 
 
-def test_dry_run_and_diff(tmp_path: Path, settings: Settings) -> None:
+def test_dry_run(tmp_path: Path, settings: Settings) -> None:
+    src = write(tmp_path / "in.ass", TEMPLATE_ASS)
+    out = write(tmp_path / "out.ass", "keep me")
+    for args in ([], ["-o", str(out)], ["-o", "-"]):
+        r = cli("render", str(src), "--dry-run", "-n", *args)
+        assert r.returncode == 0, r.stderr
+        assert r.stdout == ""
+        diff = r.stderr.splitlines()
+        assert diff[:2] == [f"--- {src}", f"+++ {args[1] if args else src}"]
+        assert sum(ln.startswith("+") and ",fx," in ln for ln in diff) == 5
+        assert not any(ln[1:].startswith(";") for ln in diff[2:])
+    assert src.read_text(encoding="utf-8-sig") == TEMPLATE_ASS
+    assert out.read_text(encoding="utf-8-sig") == "keep me"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["in.ass", "out.ass"]
+
+
+def test_output_to_stdout(tmp_path: Path, settings: Settings) -> None:
     src = write(tmp_path / "in.ass", TEMPLATE_ASS)
     out = tmp_path / "out.ass"
     assert cli("render", str(src), "-o", str(out)).returncode == 0
-    r = subprocess.run(
-        [sys.executable, str(ROOT / "aegisub-render.py"), "render", str(src), "--dry-run", "--diff"],
+    r = subprocess.run(  # bytes: the result must be exactly what a file would get (BOM, CRLF)
+        [sys.executable, str(ROOT / "aegisub-render.py"), "render", str(src), "-o", "-", "-n"],
         stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=120,
@@ -128,10 +144,6 @@ def test_dry_run_and_diff(tmp_path: Path, settings: Settings) -> None:
     assert r.returncode == 0, r.stderr
     assert r.stdout == out.read_bytes()
     assert src.read_text(encoding="utf-8-sig") == TEMPLATE_ASS
-    diff = r.stderr.decode("utf-8").splitlines()
-    assert diff[:2] == [f"--- {src}", f"+++ {src}"]
-    assert sum(ln.startswith("+") and ",fx," in ln for ln in diff) == 5
-    assert not any(ln[1:].startswith(";") for ln in diff[2:])
 
 
 def test_linked_paths_follow_the_output(tmp_path: Path, settings: Settings) -> None:

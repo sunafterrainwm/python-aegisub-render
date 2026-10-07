@@ -33,8 +33,11 @@ uv run aegisub-render.py render song.ass
 # 寫到另一個檔案；檔案已存在時會詢問，-y 直接覆寫、-n 不覆寫並以錯誤結束
 uv run aegisub-render.py render song.ass -o song.fx.ass -y
 
-# 不寫檔：結果印到 stdout，與原檔的差異印到 stderr
-uv run aegisub-render.py render song.ass --dry-run --diff > preview.ass
+# 不寫檔，只把結果與原檔的差異印到 stderr
+uv run aegisub-render.py render song.ass --dry-run
+
+# 結果寫到 stdout
+uv run aegisub-render.py render song.ass -o - > preview.ass
 
 # 其他腳本 / 巨集 / 匯出濾鏡
 uv run aegisub-render.py render in.ass -o out.ass --script strip-tags.lua --macro "Strip tags" --select 1,3-5
@@ -55,10 +58,9 @@ uv run aegisub-render.py list in.ass --script kara-templater.lua
 |---|---|
 | `--config PATH` | 設定檔，預設為環境變數 `AEGISUB_RENDER_CONFIG` 或本專案根目錄的 `config.py` |
 | `--aegisub-root DIR`、`--load-appdata` / `--no-load-appdata` | 覆蓋 `config.py` 的 `AEGISUB_ROOT`、`LOAD_APPDATA` |
-| `-o`/`--output PATH` | 輸出檔；省略時覆寫輸入檔。連結檔案（影片、時間碼、關鍵影格、音訊）的相對路徑會改成相對於輸出檔所在的目錄，與 Aegisub 另存新檔相同 |
-| `-y`/`--override`、`-n`/`--no-override` | `--output` 已存在時直接覆寫 / 不覆寫並以錯誤結束（不會執行腳本）；預設詢問，stdin 不是終端機時視為不覆寫。沒有 `--output` 時不起作用 |
-| `--dry-run` | 結果（與寫檔時逐位元組相同）印到 stdout，不寫任何檔案 |
-| `--diff` | 把輸入檔到結果的 unified diff 印到 stderr，`;` 開頭的行（註解與 header）不列入比較；即使 `-q` 也會印 |
+| `-o`/`--output PATH` | 輸出檔；省略時覆寫輸入檔；`-` 表示寫到 stdout（與寫檔時逐位元組相同；檔名真的是 `-` 時寫 `./-`）。連結檔案（影片、時間碼、關鍵影格、音訊）的相對路徑會改成相對於輸出檔所在的目錄，與 Aegisub 另存新檔相同；寫到 stdout 時相對於輸入檔 |
+| `-y`/`--override`、`-n`/`--no-override` | `--output` 檔案已存在時直接覆寫 / 不覆寫並以錯誤結束（不會執行腳本）；預設詢問，stdin 不是終端機時視為不覆寫。沒有 `--output`、`--output -` 或 `--dry-run` 時不起作用 |
+| `--dry-run` | 不寫任何東西（包括 `--output -` 的 stdout），改把輸入檔到結果的 unified diff 印到 stderr；`;` 開頭的行（註解與 header）不列入比較；即使 `-q` 也會印 |
 | `--macro NAME` / `--filter NAME` | 要執行的巨集（預設 `Apply karaoke template`，之後像存檔一樣寫出）或匯出濾鏡（像 File → Export 一樣寫出：輸入檔沒有的 `[Aegisub Project Garbage]`、`[Aegisub Extradata]` 不會寫出，有的則照存檔的方式保留） |
 | `--select 1,3-5` | 選取的對白行（1 起算，只算 Dialogue/Comment 行）；預設全選 |
 | `--force` | 巨集的 validation 函式回傳 false 時仍然執行 |

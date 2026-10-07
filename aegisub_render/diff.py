@@ -1,4 +1,4 @@
-"""--diff: how the result differs from the input, as a unified diff."""
+"""--dry-run: how the result differs from the input, as a unified diff."""
 
 import re
 from difflib import SequenceMatcher

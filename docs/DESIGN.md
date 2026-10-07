@@ -71,8 +71,9 @@ Project Garbage 與 Extradata，也不做 `CleanExtradata`（`{=id}` 標記仍�
 
 沒有 `--output` 時覆寫輸入檔。連結檔案的相對路徑照 `Project::SetSubtitlesFilename` → `UpdateRelativePaths` 改成相對於
 儲存位置；執行腳本時的 `?script` 仍是輸入檔所在目錄（Aegisub 也是存檔時才改）。`--output` 已存在時預設詢問
-（像 ffmpeg 的 `-y`/`-n`），在執行腳本前就決定。`--dry-run` 把同樣的位元組寫到 stdout；`--diff` 以輸入檔為舊版、
-結果為新版，比較前先拿掉 `;` 開頭的行，hunk 標頭仍標示完整檔案中的行號。
+（像 ffmpeg 的 `-y`/`-n`），在執行腳本前就決定。`--output -` 把同樣的位元組寫到 stdout（不檢查覆寫）。`--dry-run`
+什麼都不寫，改印 diff 到 stderr：以輸入檔為舊版、結果為新版，比較前先拿掉 `;` 開頭的行，hunk 標頭仍標示完整檔案中
+的行號。
 
 ## 測試
 

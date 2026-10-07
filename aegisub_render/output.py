@@ -1,4 +1,4 @@
-"""stderr output: script log (aegisub.debug.out), status lines, --diff, and a single-line progress display."""
+"""stderr output: script log (aegisub.debug.out), status lines, the --dry-run diff, and a progress line."""
 
 import io
 import os

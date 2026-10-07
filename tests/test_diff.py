@@ -1,4 +1,4 @@
-"""--diff output."""
+"""The diff that --dry-run prints."""
 
 from aegisub_render.diff import text_lines, unified_diff
 

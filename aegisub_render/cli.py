@@ -4,9 +4,10 @@ import argparse
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
 
 from aegisub_render.output import Output, use_utf8_for_pipes
-from aegisub_render.runner import ExitCode, RenderOptions, list_features, render
+from aegisub_render.runner import STDOUT, ExitCode, RenderOptions, list_features, render
 from aegisub_render.settings import ConfigError, Settings, load_settings
 from aegisub_render.video.context import VideoOptions
 
@@ -40,6 +41,11 @@ def parse_size(spec: str) -> tuple[int, int]:
         return int(w), int(h)
     except ValueError:
         raise argparse.ArgumentTypeError(f"bad size {spec!r} (expected WIDTHxHEIGHT)") from None
+
+
+def parse_output(spec: str) -> Path | Literal["-"]:
+    """'-' is stdout; a file named '-' can still be given as './-'."""
+    return STDOUT if spec == STDOUT else Path(spec)
 
 
 def _common(p: argparse.ArgumentParser) -> None:
@@ -94,7 +100,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     r = sub.add_parser("render", help="run a macro (default: kara-templater) or export filter and save the result")
     _common(r)
-    r.add_argument("-o", "--output", type=Path, help="output .ass file (default: replace the input file)")
+    r.add_argument(
+        "-o",
+        "--output",
+        type=parse_output,
+        help="output .ass file, or - for stdout (default: replace the input file)",
+    )
     override = r.add_mutually_exclusive_group()
     override.add_argument(
         "-y",
@@ -103,7 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_const",
         const=True,
         default=None,
-        help="replace --output if it exists without asking",
+        help="replace the --output file if it exists without asking",
     )
     override.add_argument(
         "-n",
@@ -111,13 +122,13 @@ def build_parser() -> argparse.ArgumentParser:
         dest="override",
         action="store_const",
         const=False,
-        help="stop with an error if --output exists (default: ask)",
+        help="stop with an error if the --output file exists (default: ask)",
     )
-    r.add_argument("--dry-run", action="store_true", help="write the result to stdout; no file is written")
     r.add_argument(
-        "--diff",
+        "--dry-run",
         action="store_true",
-        help="print how the result differs from the input to stderr (lines starting with ';' are ignored)",
+        help="write nothing; print how the result differs from the input to stderr "
+        "(lines starting with ';' are ignored)",
     )
     which = r.add_mutually_exclusive_group()
     which.add_argument("--macro", help="macro name (default from config: Apply karaoke template)")
@@ -175,7 +186,6 @@ def _options(args: argparse.Namespace, settings: Settings) -> RenderOptions:
         quiet=args.quiet,
         progress=False if args.no_progress else None,
         dry_run=getattr(args, "dry_run", False),
-        diff=getattr(args, "diff", False),
     )
 
 
@@ -225,8 +235,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"  {name}  (priority {priority})" + (f"  -- {desc.splitlines()[0]}" if desc else ""))
         return ExitCode.OK
 
-    output: Path | None = args.output
-    if output is not None and not options.dry_run and output.exists() and not may_replace(output, args.override):
+    output: Path | Literal["-"] | None = args.output
+    if isinstance(output, Path) and not options.dry_run and output.exists() and not may_replace(output, args.override):
         return ExitCode.ERROR
     return render(args.input, output, settings, options, out)
 

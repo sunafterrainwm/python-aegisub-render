@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path, PureWindowsPath
+from typing import Final, Literal
 
 from aegisub_render.ass.entries import SubtitleFormatParseError
 from aegisub_render.ass.file import AssFile
@@ -17,6 +18,8 @@ from aegisub_render.paths import AegisubPaths, join
 from aegisub_render.settings import Settings, automation_dirs, read_aegisub_options
 from aegisub_render.video.context import VideoOptions, build_video_context
 from aegisub_render.worker import FeatureList, Job, Result, worker_main
+
+STDOUT: Final = "-"  # render() output path meaning standard output
 
 
 class ExitCode(IntEnum):
@@ -36,8 +39,7 @@ class RenderOptions:
     trace_level: int | None = None
     quiet: bool = False
     progress: bool | None = None
-    dry_run: bool = False  # write the result to stdout instead of the output file
-    diff: bool = False  # print how the result differs from the input
+    dry_run: bool = False  # write nothing; print how the result differs from the input instead
 
 
 class RenderError(Exception):
@@ -163,19 +165,20 @@ def run_job(job: Job, timeout: float) -> Result:
 
 def render(
     input_path: Path,
-    output_path: Path | None,
+    output_path: Path | Literal["-"] | None,
     settings: Settings,
     options: RenderOptions | None = None,
     out: Output | None = None,
 ) -> ExitCode:
-    """Run the script on `input_path` and save the result to `output_path` (None: replace the input),
-    or with `options.dry_run` write it to stdout instead."""
+    """Run the script on `input_path` and save the result to `output_path`: a file, STDOUT, or None
+    to replace the input. With `options.dry_run` nothing is written; how the result differs from
+    the input is printed instead."""
     options = options or RenderOptions()
     out = out or Output(quiet=options.quiet, progress=options.progress)
-    target = output_path if output_path is not None else input_path
+    save_to = output_path if isinstance(output_path, Path) else input_path
     try:
-        prepared = prepare(input_path, settings, options, out, save_to=target)
-        original = input_path.read_bytes() if options.diff else b""
+        prepared = prepare(input_path, settings, options, out, save_to=save_to)
+        original = input_path.read_bytes() if options.dry_run else b""
     except (RenderError, OSError) as e:
         out.error(f"aegisub-render: {e}")
         return ExitCode.ERROR
@@ -189,17 +192,19 @@ def render(
         out.error("aegisub-render: the script failed; no output was written")
         return ExitCode.ERROR
     data = output_data(prepared, result.ass)
-    if options.diff:
-        out.diff(unified_diff(text_lines(original), text_lines(data), str(input_path), str(target)))
     if options.dry_run:
+        new_name = str(output_path if output_path is not None else input_path)
+        out.diff(unified_diff(text_lines(original), text_lines(data), str(input_path), new_name))
+        return ExitCode.OK
+    if output_path == STDOUT:
         sys.stdout.flush()
         sys.stdout.buffer.write(data)
         sys.stdout.buffer.flush()
         return ExitCode.OK
     try:
-        write_ass_file(data, target)
+        write_ass_file(data, save_to)
     except OSError as e:
-        out.error(f"aegisub-render: could not write {target}: {e}")
+        out.error(f"aegisub-render: could not write {save_to}: {e}")
         return ExitCode.ERROR
     return ExitCode.OK
 
