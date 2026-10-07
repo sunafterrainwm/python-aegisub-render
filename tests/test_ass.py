@@ -144,10 +144,14 @@ def test_parser_and_writer() -> None:
     without_ui = serialize_ass(ass, save_ui_state=False).decode("utf-8-sig")
     assert "Active Line" not in without_ui
 
+    # Export keeps the sections the input had, written as Save writes them ...
+    assert serialize_export(ass, save_ui_state=False) == serialize_ass(ass, save_ui_state=False)
+    # ... and otherwise leaves them out like ExportFile, although GetEntryData still writes the
+    # extradata ids.
+    ass.had_project_garbage = ass.had_extradata = False
     exported = serialize_export(ass).decode("utf-8-sig").split("\r\n")
     assert exported[3:8] == ["Title: x", "ScriptType: v4.00+", "PlayResX: 640", "", "[V4+ Styles]"]
     assert "[Aegisub Project Garbage]" not in exported and "[Aegisub Extradata]" not in exported
-    # GetEntryData still writes the extradata ids, although ExportFile drops what they refer to.
     assert "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,{=1}hello" in exported
 
 

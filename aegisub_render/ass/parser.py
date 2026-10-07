@@ -187,8 +187,10 @@ class AssParser:
             elif low == "[script info]":
                 self.state = self.parse_script_info_line
             elif low == "[aegisub project garbage]":
+                self.target.had_project_garbage = True
                 self.state = self.parse_metadata_line
             elif low == "[aegisub extradata]":
+                self.target.had_extradata = True
                 self.state = self.parse_extradata_line
             elif low == "[graphics]":
                 self.state = self.parse_graphics_line

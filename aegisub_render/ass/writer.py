@@ -107,14 +107,20 @@ def serialize_ass(ass: AssFile, save_ui_state: bool = True) -> bytes:
     return w.data()
 
 
-def serialize_export(ass: AssFile) -> bytes:
+def serialize_export(ass: AssFile, save_ui_state: bool = True) -> bytes:
     """AssExporter::Export: AssSubtitleFormat::ExportFile, which leaves out the Project Garbage and
-    the Extradata (and so never cleans the latter)."""
+    the Extradata. Unlike Aegisub, either section is kept, written as Save writes it, when the
+    input had it: the result may replace the input, which must not lose them."""
     w = _Writer()
     w.write_entries(list(ass.info))
+    if ass.had_project_garbage:
+        w.write_properties(ass.properties, save_ui_state)
     w.write_entries(list(ass.styles))
     w.write_entries(list(ass.attachments))
     w.write_entries(list(ass.events))
+    if ass.had_extradata:
+        ass.clean_extradata()
+        w.write_extradata(ass)
     return w.data()
 
 

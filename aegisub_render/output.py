@@ -1,9 +1,24 @@
-"""stderr output: script log (aegisub.debug.out), status lines, and a single-line progress display."""
+"""stderr output: script log (aegisub.debug.out), status lines, --diff, and a single-line progress display."""
 
 import io
+import os
 import sys
 import time
 from typing import TextIO
+
+
+def _color_diff_line(index: int, line: str) -> str:
+    if index < 2:  # the ---/+++ header
+        code = "1"
+    elif line.startswith("@@"):
+        code = "36"
+    elif line.startswith("+"):
+        code = "32"
+    elif line.startswith("-"):
+        code = "31"
+    else:
+        return line
+    return f"\x1b[{code}m{line}\x1b[0m"
 
 
 def use_utf8_for_pipes() -> None:
@@ -18,7 +33,9 @@ class Output:
         self.stream = stream if stream is not None else sys.stderr
         self.quiet = quiet
         isatty = getattr(self.stream, "isatty", None)
-        self.progress_enabled = (not quiet) and (progress if progress is not None else bool(isatty and isatty()))
+        terminal = bool(isatty and isatty())
+        self.progress_enabled = (not quiet) and (progress if progress is not None else terminal)
+        self.color = terminal and not os.environ.get("NO_COLOR")
         self._progress_shown = False
         self._task = ""
         self._title = ""
@@ -53,6 +70,15 @@ class Output:
         if not self._at_line_start:
             self.write("\n")
         self.write(text if text.endswith("\n") else text + "\n")
+
+    def diff(self, lines: list[str]) -> None:
+        """A unified diff: asked for, so printed even with --quiet; colored on a terminal."""
+        if not lines:
+            return
+        if self.color:
+            lines = [_color_diff_line(i, ln) for i, ln in enumerate(lines)]
+        self.finish_line()
+        self.write("\n".join(lines) + "\n")
 
     def status(self, text: str) -> None:
         if not self.quiet:

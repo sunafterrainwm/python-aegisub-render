@@ -1,6 +1,7 @@
 """Public entry points: render a subtitle file, or list a script's features."""
 
 import multiprocessing
+import sys
 import time
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -10,6 +11,7 @@ from aegisub_render.ass.entries import SubtitleFormatParseError
 from aegisub_render.ass.file import AssFile
 from aegisub_render.ass.parser import UnsupportedEncodingError, read_ass_file
 from aegisub_render.ass.writer import serialize_ass, serialize_export, write_ass_file
+from aegisub_render.diff import text_lines, unified_diff
 from aegisub_render.output import Output
 from aegisub_render.paths import AegisubPaths, join
 from aegisub_render.settings import Settings, automation_dirs, read_aegisub_options
@@ -34,6 +36,8 @@ class RenderOptions:
     trace_level: int | None = None
     quiet: bool = False
     progress: bool | None = None
+    dry_run: bool = False  # write the result to stdout instead of the output file
+    diff: bool = False  # print how the result differs from the input
 
 
 class RenderError(Exception):
@@ -60,7 +64,11 @@ def resolve_script(name: str, paths: AegisubPaths, autoload_option: str) -> Path
     raise RenderError(f"script {name!r} not found in the autoload directories ({autoload_option})")
 
 
-def prepare(input_path: Path, settings: Settings, options: RenderOptions, out: Output) -> Prepared:
+def prepare(
+    input_path: Path, settings: Settings, options: RenderOptions, out: Output, save_to: Path | None = None
+) -> Prepared:
+    """`save_to` is where the result will be saved (default: the input), which the linked file paths
+    are made relative to."""
     root = settings.aegisub_root
     if not (root / "automation").is_dir():
         raise RenderError(f"{root} does not look like an Aegisub installation (no automation directory)")
@@ -81,7 +89,8 @@ def prepare(input_path: Path, settings: Settings, options: RenderOptions, out: O
 
     vopts = options.video
     vopts.open_audio = aeg.open_audio
-    video = build_video_context(ass, paths, vopts)
+    save_dir = str(save_to.resolve().parent) if save_to is not None else None
+    video = build_video_context(ass, paths, vopts, save_dir)
     for w in video.warnings:
         out.message(w)
 
@@ -115,7 +124,7 @@ def output_data(prepared: Prepared, ass: AssFile) -> bytes:
     """What Aegisub writes after the script ran. Export filters only run in File > Export, which
     writes with ExportFile; a macro is followed by File > Save."""
     if prepared.job.filter is not None:
-        return serialize_export(ass)
+        return serialize_export(ass, prepared.save_ui_state)
     return serialize_ass(ass, prepared.save_ui_state)
 
 
@@ -154,16 +163,20 @@ def run_job(job: Job, timeout: float) -> Result:
 
 def render(
     input_path: Path,
-    output_path: Path,
+    output_path: Path | None,
     settings: Settings,
     options: RenderOptions | None = None,
     out: Output | None = None,
 ) -> ExitCode:
+    """Run the script on `input_path` and save the result to `output_path` (None: replace the input),
+    or with `options.dry_run` write it to stdout instead."""
     options = options or RenderOptions()
     out = out or Output(quiet=options.quiet, progress=options.progress)
+    target = output_path if output_path is not None else input_path
     try:
-        prepared = prepare(input_path, settings, options, out)
-    except RenderError as e:
+        prepared = prepare(input_path, settings, options, out, save_to=target)
+        original = input_path.read_bytes() if options.diff else b""
+    except (RenderError, OSError) as e:
         out.error(f"aegisub-render: {e}")
         return ExitCode.ERROR
     result = run_job(prepared.job, settings.timeout_seconds)
@@ -175,7 +188,19 @@ def render(
     if result.status != "ok" or result.ass is None:
         out.error("aegisub-render: the script failed; no output was written")
         return ExitCode.ERROR
-    write_ass_file(output_data(prepared, result.ass), output_path)
+    data = output_data(prepared, result.ass)
+    if options.diff:
+        out.diff(unified_diff(text_lines(original), text_lines(data), str(input_path), str(target)))
+    if options.dry_run:
+        sys.stdout.flush()
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
+        return ExitCode.OK
+    try:
+        write_ass_file(data, target)
+    except OSError as e:
+        out.error(f"aegisub-render: could not write {target}: {e}")
+        return ExitCode.ERROR
     return ExitCode.OK
 
 

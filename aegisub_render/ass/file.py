@@ -23,6 +23,9 @@ class AssFile:
     extradata: list[ExtradataEntry] = field(default_factory=list[ExtradataEntry])
     properties: ProjectProperties = field(default_factory=ProjectProperties)
     next_extradata_id: int = 1
+    # Whether the file these were read from had the sections (not part of Aegisub's AssFile).
+    had_project_garbage: bool = False
+    had_extradata: bool = False
 
     def line_count(self) -> int:
         return len(self.info) + len(self.styles) + len(self.events)

@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 def cli(*args: str, timeout: float = 120) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(ROOT / "aegisub-render.py"), *args],
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -69,7 +70,8 @@ def test_render_kara_templater(tmp_path: Path, settings: Settings) -> None:
 
 
 def test_render_export_filter(tmp_path: Path, settings: Settings) -> None:
-    """--filter is File > Export: the same result as the macro, without the Project Garbage section."""
+    """--filter is File > Export: the same result as the macro, without the Project Garbage section
+    unless the input had one."""
     src = write(tmp_path / "in.ass", TEMPLATE_ASS)
     saved, exported = tmp_path / "saved.ass", tmp_path / "exported.ass"
     r = cli("render", str(src), "-o", str(saved))
@@ -81,6 +83,67 @@ def test_render_export_filter(tmp_path: Path, settings: Settings) -> None:
     assert "[Aegisub Project Garbage]" in saved_text
     assert "[Aegisub Project Garbage]" not in exported_text
     assert exported_text.split("[V4+ Styles]")[1] == saved_text.split("[V4+ Styles]")[1]
+
+    garbage = "[Aegisub Project Garbage]\nLast Style Storage: Default\n\n"
+    write(src, TEMPLATE_ASS.replace("[V4+ Styles]", garbage + "[V4+ Styles]"))
+    r = cli("render", str(src), "-o", str(exported), "-y", "--filter", "Karaoke template")
+    assert r.returncode == 0, r.stderr
+    exported_text = exported.read_text(encoding="utf-8-sig")
+    assert "\n[Aegisub Project Garbage]\nLast Style Storage: Default\n\n[V4+ Styles]" in exported_text
+
+
+def test_render_in_place(tmp_path: Path, settings: Settings) -> None:
+    src = write(tmp_path / "in.ass", TEMPLATE_ASS)
+    r = cli("render", str(src))
+    assert r.returncode == 0, r.stderr
+    assert src.read_text(encoding="utf-8-sig").count(",fx,") == 5
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["in.ass"]
+
+
+def test_existing_output(tmp_path: Path, settings: Settings) -> None:
+    src = write(tmp_path / "in.ass", TEMPLATE_ASS)
+    out = write(tmp_path / "out.ass", "keep me")
+    # stdin is not a terminal (or is NUL, which reads as one), so nobody can say yes
+    r = cli("render", str(src), "-o", str(out))
+    assert r.returncode == 1 and "already exists" in r.stderr
+    r = cli("render", str(src), "-o", str(out), "-n")
+    assert r.returncode == 1 and "--no-override" in r.stderr
+    assert out.read_text(encoding="utf-8-sig") == "keep me"
+    r = cli("render", str(src), "-o", str(out), "--override")
+    assert r.returncode == 0, r.stderr
+    assert out.read_text(encoding="utf-8-sig").count(",fx,") == 5
+
+
+def test_dry_run_and_diff(tmp_path: Path, settings: Settings) -> None:
+    src = write(tmp_path / "in.ass", TEMPLATE_ASS)
+    out = tmp_path / "out.ass"
+    assert cli("render", str(src), "-o", str(out)).returncode == 0
+    r = subprocess.run(
+        [sys.executable, str(ROOT / "aegisub-render.py"), "render", str(src), "--dry-run", "--diff"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        timeout=120,
+        check=False,
+    )
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == out.read_bytes()
+    assert src.read_text(encoding="utf-8-sig") == TEMPLATE_ASS
+    diff = r.stderr.decode("utf-8").splitlines()
+    assert diff[:2] == [f"--- {src}", f"+++ {src}"]
+    assert sum(ln.startswith("+") and ",fx," in ln for ln in diff) == 5
+    assert not any(ln[1:].startswith(";") for ln in diff[2:])
+
+
+def test_linked_paths_follow_the_output(tmp_path: Path, settings: Settings) -> None:
+    """Project::SetSubtitlesFilename: relative paths are rewritten for where the file is saved."""
+    (tmp_path / "kf.txt").write_text("# keyframe format v1\nfps 0\n0\n10\n", encoding="utf-8")
+    garbage = "[Aegisub Project Garbage]\nKeyframes File: kf.txt\n\n"
+    src = write(tmp_path / "in.ass", TEMPLATE_ASS.replace("[V4+ Styles]", garbage + "[V4+ Styles]"))
+    (tmp_path / "sub").mkdir()
+    out = tmp_path / "sub" / "out.ass"
+    r = cli("render", str(src), "-o", str(out))
+    assert r.returncode == 0, r.stderr
+    assert "\nKeyframes File: ../kf.txt\n" in out.read_text(encoding="utf-8-sig")
 
 
 def test_error_writes_nothing(tmp_path: Path, settings: Settings) -> None:
@@ -171,5 +234,5 @@ def test_real_video_probe_and_cache(tmp_path: Path, settings: Settings) -> None:
     assert "Video File: clip.mkv" in text
     assert "Video AR Value: 1.333333" in text
     # a second run is served from the cache
-    r = cli("render", str(src), "-o", str(out), "--script", str(s), "--macro", "m")
+    r = cli("render", str(src), "-o", str(out), "-y", "--script", str(s), "--macro", "m")
     assert r.returncode == 0, r.stderr

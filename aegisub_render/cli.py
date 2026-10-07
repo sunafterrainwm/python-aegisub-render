@@ -94,11 +94,37 @@ def build_parser() -> argparse.ArgumentParser:
 
     r = sub.add_parser("render", help="run a macro (default: kara-templater) or export filter and save the result")
     _common(r)
-    r.add_argument("-o", "--output", type=Path, required=True, help="output .ass file")
+    r.add_argument("-o", "--output", type=Path, help="output .ass file (default: replace the input file)")
+    override = r.add_mutually_exclusive_group()
+    override.add_argument(
+        "-y",
+        "--override",
+        dest="override",
+        action="store_const",
+        const=True,
+        default=None,
+        help="replace --output if it exists without asking",
+    )
+    override.add_argument(
+        "-n",
+        "--no-override",
+        dest="override",
+        action="store_const",
+        const=False,
+        help="stop with an error if --output exists (default: ask)",
+    )
+    r.add_argument("--dry-run", action="store_true", help="write the result to stdout; no file is written")
+    r.add_argument(
+        "--diff",
+        action="store_true",
+        help="print how the result differs from the input to stderr (lines starting with ';' are ignored)",
+    )
     which = r.add_mutually_exclusive_group()
     which.add_argument("--macro", help="macro name (default from config: Apply karaoke template)")
     which.add_argument(
-        "--filter", help="export filter name; the output is then written like File > Export (no Project Garbage)"
+        "--filter",
+        help="export filter name; the result is then written like File > Export, but keeps the input's "
+        "Project Garbage and Extradata sections",
     )
     r.add_argument("--select", type=parse_selection, help="dialogue lines to select, e.g. 1,3-5 (default: all)")
     r.add_argument("--force", action="store_true", help="run the macro even if its validation function says no")
@@ -148,7 +174,29 @@ def _options(args: argparse.Namespace, settings: Settings) -> RenderOptions:
         trace_level=trace,
         quiet=args.quiet,
         progress=False if args.no_progress else None,
+        dry_run=getattr(args, "dry_run", False),
+        diff=getattr(args, "diff", False),
     )
+
+
+def may_replace(path: Path, override: bool | None) -> bool:
+    """Whether an existing --output may be replaced: -y, -n, or ask (no when stdin is not a terminal)."""
+    if override is not None:
+        if not override:
+            print(f"aegisub-render: {path} already exists; not replacing it (--no-override)", file=sys.stderr)
+        return override
+    if not sys.stdin.isatty():
+        print(f"aegisub-render: {path} already exists; pass -y to replace it", file=sys.stderr)
+        return False
+    print(f"aegisub-render: {path} already exists. Replace it? [y/N] ", end="", file=sys.stderr, flush=True)
+    try:
+        answer = sys.stdin.readline()
+    except KeyboardInterrupt:
+        answer = ""
+    if answer.strip().lower() in ("y", "yes"):
+        return True
+    print("aegisub-render: not replacing it", file=sys.stderr)
+    return False
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -177,7 +225,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"  {name}  (priority {priority})" + (f"  -- {desc.splitlines()[0]}" if desc else ""))
         return ExitCode.OK
 
-    return render(args.input, args.output, settings, options, out)
+    output: Path | None = args.output
+    if output is not None and not options.dry_run and output.exists() and not may_replace(output, args.override):
+        return ExitCode.ERROR
+    return render(args.input, output, settings, options, out)
 
 
 if __name__ == "__main__":

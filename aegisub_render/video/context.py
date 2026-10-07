@@ -73,7 +73,10 @@ def _generic_relative(path: str, base: str) -> str:
     return "/".join(rel)
 
 
-def build_video_context(ass: AssFile, paths: AegisubPaths, opts: VideoOptions) -> VideoContext:
+def build_video_context(
+    ass: AssFile, paths: AegisubPaths, opts: VideoOptions, save_dir: str | None = None
+) -> VideoContext:
+    """`save_dir` is the directory the result will be saved in (default: the script's, ?script)."""
     ctx = VideoContext()
     props = ass.properties
     script_dir = paths.get("?script")
@@ -175,9 +178,10 @@ def build_video_context(ass: AssFile, paths: AegisubPaths, opts: VideoOptions) -
         if ctx.ar_type == 0:
             ctx.ar_value = mid(0.5, ctx.width / ctx.height, 5.0)
 
-    # Project::UpdateRelativePaths (called when the subtitles are saved)
-    props.audio_file = _generic_relative(loaded_audio, script_dir)
-    props.video_file = _generic_relative(loaded_video, script_dir)
-    props.timecodes_file = _generic_relative(loaded_timecodes, script_dir)
-    props.keyframes_file = _generic_relative(loaded_keyframes, script_dir)
+    # Project::SetSubtitlesFilename -> UpdateRelativePaths (on save, relative to where it is saved)
+    base = save_dir if save_dir is not None else script_dir
+    props.audio_file = _generic_relative(loaded_audio, base)
+    props.video_file = _generic_relative(loaded_video, base)
+    props.timecodes_file = _generic_relative(loaded_timecodes, base)
+    props.keyframes_file = _generic_relative(loaded_keyframes, base)
     return ctx
