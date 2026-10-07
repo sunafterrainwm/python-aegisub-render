@@ -9,7 +9,7 @@ from aegisub_render.ass.karaoke import parse_karaoke_syllables
 from aegisub_render.ass.override import OverrideTag
 from aegisub_render.ass.parser import decode_subtitle_bytes, parse_ass_lines
 from aegisub_render.ass.time import ass_formatted, parse_time, time_int
-from aegisub_render.ass.writer import serialize_ass
+from aegisub_render.ass.writer import serialize_ass, serialize_export
 
 
 @pytest.mark.parametrize(
@@ -143,6 +143,12 @@ def test_parser_and_writer() -> None:
     assert "[Some Unknown Section]" not in lines
     without_ui = serialize_ass(ass, save_ui_state=False).decode("utf-8-sig")
     assert "Active Line" not in without_ui
+
+    exported = serialize_export(ass).decode("utf-8-sig").split("\r\n")
+    assert exported[3:8] == ["Title: x", "ScriptType: v4.00+", "PlayResX: 640", "", "[V4+ Styles]"]
+    assert "[Aegisub Project Garbage]" not in exported and "[Aegisub Extradata]" not in exported
+    # GetEntryData still writes the extradata ids, although ExportFile drops what they refer to.
+    assert "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,{=1}hello" in exported
 
 
 def test_attachments_survive() -> None:

@@ -7,8 +7,9 @@ from enum import IntEnum
 from pathlib import Path, PureWindowsPath
 
 from aegisub_render.ass.entries import SubtitleFormatParseError
+from aegisub_render.ass.file import AssFile
 from aegisub_render.ass.parser import UnsupportedEncodingError, read_ass_file
-from aegisub_render.ass.writer import write_ass_file
+from aegisub_render.ass.writer import serialize_ass, serialize_export, write_ass_file
 from aegisub_render.output import Output
 from aegisub_render.paths import AegisubPaths, join
 from aegisub_render.settings import Settings, automation_dirs, read_aegisub_options
@@ -110,6 +111,14 @@ def prepare(input_path: Path, settings: Settings, options: RenderOptions, out: O
     return Prepared(job, aeg.save_ui_state)
 
 
+def output_data(prepared: Prepared, ass: AssFile) -> bytes:
+    """What Aegisub writes after the script ran. Export filters only run in File > Export, which
+    writes with ExportFile; a macro is followed by File > Save."""
+    if prepared.job.filter is not None:
+        return serialize_export(ass)
+    return serialize_ass(ass, prepared.save_ui_state)
+
+
 def run_job(job: Job, timeout: float) -> Result:
     ctx = multiprocessing.get_context("spawn")
     parent_conn, child_conn = ctx.Pipe(duplex=False)
@@ -166,7 +175,7 @@ def render(
     if result.status != "ok" or result.ass is None:
         out.error("aegisub-render: the script failed; no output was written")
         return ExitCode.ERROR
-    write_ass_file(result.ass, output_path, prepared.save_ui_state)
+    write_ass_file(output_data(prepared, result.ass), output_path)
     return ExitCode.OK
 
 

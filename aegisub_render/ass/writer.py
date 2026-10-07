@@ -1,4 +1,4 @@
-"""Writing .ass files exactly like AssSubtitleFormat::WriteFile on Windows (UTF-8 BOM, CRLF)."""
+"""Writing .ass files exactly like AssSubtitleFormat::WriteFile/ExportFile on Windows (UTF-8 BOM, CRLF)."""
 
 from pathlib import Path
 
@@ -90,6 +90,9 @@ class _Writer:
                 text += "e" + encoded
             self.line(text)
 
+    def data(self) -> bytes:
+        return b"\xef\xbb\xbf" + to_bytes("".join(self.out))
+
 
 def serialize_ass(ass: AssFile, save_ui_state: bool = True) -> bytes:
     """SubsController::Save: CleanExtradata, then AssSubtitleFormat::WriteFile."""
@@ -101,12 +104,22 @@ def serialize_ass(ass: AssFile, save_ui_state: bool = True) -> bytes:
     w.write_entries(list(ass.attachments))
     w.write_entries(list(ass.events))
     w.write_extradata(ass)
-    return b"\xef\xbb\xbf" + to_bytes("".join(w.out))
+    return w.data()
 
 
-def write_ass_file(ass: AssFile, path: Path, save_ui_state: bool = True) -> None:
+def serialize_export(ass: AssFile) -> bytes:
+    """AssExporter::Export: AssSubtitleFormat::ExportFile, which leaves out the Project Garbage and
+    the Extradata (and so never cleans the latter)."""
+    w = _Writer()
+    w.write_entries(list(ass.info))
+    w.write_entries(list(ass.styles))
+    w.write_entries(list(ass.attachments))
+    w.write_entries(list(ass.events))
+    return w.data()
+
+
+def write_ass_file(data: bytes, path: Path) -> None:
     """Write atomically: the destination is only replaced once the whole file is ready."""
-    data = serialize_ass(ass, save_ui_state)
     tmp = path.with_name(path.name + ".aegisub-render.tmp")
     tmp.write_bytes(data)
     tmp.replace(path)

@@ -97,7 +97,9 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("-o", "--output", type=Path, required=True, help="output .ass file")
     which = r.add_mutually_exclusive_group()
     which.add_argument("--macro", help="macro name (default from config: Apply karaoke template)")
-    which.add_argument("--filter", help="export filter name")
+    which.add_argument(
+        "--filter", help="export filter name; the output is then written like File > Export (no Project Garbage)"
+    )
     r.add_argument("--select", type=parse_selection, help="dialogue lines to select, e.g. 1,3-5 (default: all)")
     r.add_argument("--force", action="store_true", help="run the macro even if its validation function says no")
 

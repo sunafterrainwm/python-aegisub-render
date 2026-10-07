@@ -9,8 +9,6 @@ YCbCr Matrix: TV.709
 PlayResX: 1920
 PlayResY: 1080
 
-[Aegisub Project Garbage]
-
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Default-furigana,Segoe UI,21,&H00BBAC39,&H00B17471,&H00DFD341,&H80B99629,0,0,0,0,100,100,0,0,1,0.5,0.5,1,10,40,30,1

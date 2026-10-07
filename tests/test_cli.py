@@ -68,6 +68,21 @@ def test_render_kara_templater(tmp_path: Path, settings: Settings) -> None:
     assert "Default-furigana" in text
 
 
+def test_render_export_filter(tmp_path: Path, settings: Settings) -> None:
+    """--filter is File > Export: the same result as the macro, without the Project Garbage section."""
+    src = write(tmp_path / "in.ass", TEMPLATE_ASS)
+    saved, exported = tmp_path / "saved.ass", tmp_path / "exported.ass"
+    r = cli("render", str(src), "-o", str(saved))
+    assert r.returncode == 0, r.stderr
+    r = cli("render", str(src), "-o", str(exported), "--filter", "Karaoke template")
+    assert r.returncode == 0, r.stderr
+    saved_text = saved.read_text(encoding="utf-8-sig")
+    exported_text = exported.read_text(encoding="utf-8-sig")
+    assert "[Aegisub Project Garbage]" in saved_text
+    assert "[Aegisub Project Garbage]" not in exported_text
+    assert exported_text.split("[V4+ Styles]")[1] == saved_text.split("[V4+ Styles]")[1]
+
+
 def test_error_writes_nothing(tmp_path: Path, settings: Settings) -> None:
     src = write(tmp_path / "in.ass", MINIMAL_ASS)
     out = tmp_path / "out.ass"
