@@ -49,7 +49,7 @@ class FeatureList:
 
 @dataclass(slots=True)
 class Result:
-    status: str  # "ok" | "error" | "cancel"
+    status: str  # "ok" | "error" (the script failed) | "cancel" | "refused" (nothing ran; see message)
     message: str = ""
     ass: AssFile | None = None
     features: FeatureList | None = None
@@ -59,7 +59,7 @@ class Result:
 
 
 class JobError(Exception):
-    pass
+    """The job cannot be run as asked; the script was not run."""
 
 
 def _select_rows(ass: AssFile, selection: list[int] | None) -> tuple[list[int], int]:
@@ -82,6 +82,16 @@ def _pick_macro(info: ScriptInfo, name: str) -> Macro:
             return m
     available = ", ".join(repr(m.name) for m in info.macros) or "(none)"
     raise JobError(f"script has no macro named {name!r}; available macros: {available}")
+
+
+def _disabled_message(job: Job, macro: Macro) -> str:
+    text = (
+        f"macro {macro.name!r} is disabled for this file: its validation function returned false, "
+        "so Aegisub would grey it out"
+    )
+    if job.script_path.name.lower() == "kara-templater.lua":  # macro_can_template
+        text += " (kara-templater needs a line whose Effect starts with 'template' among the first 51 [Events] lines)"
+    return text + ". Use --force to run it anyway"
 
 
 def execute(job: Job, out: Output | None = None) -> Result:
@@ -124,18 +134,14 @@ def execute(job: Job, out: Output | None = None) -> Result:
             flt = next((f for f in info.filters if f.name == job.filter), None)
             if flt is None:
                 available = ", ".join(repr(f.name) for f in info.filters) or "(none)"
-                return Result("error", f"script has no export filter named {job.filter!r}; available: {available}")
+                raise JobError(f"script has no export filter named {job.filter!r}; available: {available}")
             out.progress_begin(flt.name)
             status = host.run_filter(flt)
         else:
             macro = _pick_macro(info, job.macro or "")
             rows, active = _select_rows(job.ass, job.selection)
             if macro.has_validate and not job.force and not host.validate_macro(macro, rows, active):
-                return Result(
-                    "error",
-                    f"the validation function of macro {macro.name!r} returned false "
-                    "(Aegisub would grey it out); use --force to run it anyway",
-                )
+                raise JobError(_disabled_message(job, macro))
             out.progress_begin(macro.name)
             status = host.run_macro(macro, rows, active)
         out.progress_end(complete=status is RunStatus.OK)
@@ -147,7 +153,7 @@ def execute(job: Job, out: Output | None = None) -> Result:
             result.message = f"aegisub-render: the Lua memory limit ({job.memory_limit} bytes) was exceeded"
         return result
     except JobError as e:
-        return Result("error", str(e))
+        return Result("refused", f"aegisub-render: {e}")
     except LuaError as e:
         return Result("error", f"aegisub-render: unexpected Lua error in the host: {e.message}")
     finally:

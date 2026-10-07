@@ -92,6 +92,21 @@ def test_render_export_filter(tmp_path: Path, settings: Settings) -> None:
     assert "\n[Aegisub Project Garbage]\nLast Style Storage: Default\n\n[V4+ Styles]" in exported_text
 
 
+def test_file_without_templates(tmp_path: Path, settings: Settings) -> None:
+    """kara-templater's validation function greys the macro out: one message, nothing written."""
+    src = write(tmp_path / "in.ass", MINIMAL_ASS)
+    r = cli("render", str(src))
+    assert r.returncode == 1
+    lines = r.stderr.splitlines()
+    assert len(lines) == 1, r.stderr
+    assert "'Apply karaoke template' is disabled for this file" in lines[0] and "--force" in lines[0]
+    assert "kara-templater needs a line whose Effect starts with 'template'" in lines[0]
+    assert src.read_text(encoding="utf-8-sig") == MINIMAL_ASS
+
+    r = cli("render", str(src), "--force", "--dry-run")
+    assert r.returncode == 0, r.stderr
+
+
 def test_render_in_place(tmp_path: Path, settings: Settings) -> None:
     src = write(tmp_path / "in.ass", TEMPLATE_ASS)
     r = cli("render", str(src))

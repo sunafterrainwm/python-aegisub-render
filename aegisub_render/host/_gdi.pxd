@@ -60,3 +60,10 @@ cdef extern from "windows.h" nogil:
     BOOL GetTextMetricsW(HDC hdc, TEXTMETRICW *lptm)
     int GetTextFaceW(HDC hdc, int c, wchar_t *lpName)
     int AddFontResourceExW(const wchar_t *name, DWORD fl, void *res)
+    DWORD GetFontData(HDC hdc, DWORD dwTable, DWORD dwOffset, void *pvBuffer, DWORD cjBuffer)
+    DWORD GDI_ERROR
+
+
+# The 'name' table tag as GetFontData wants it: the four tag bytes read as a little-endian DWORD.
+cdef enum:
+    TAG_NAME = 0x656D616E

@@ -14,6 +14,29 @@ cdef bytes _wide(str text):
     return text.encode("utf-16-le", "surrogatepass") + b"\0\0"
 
 
+cdef HFONT _create_font(
+    bytes wface, LONG height, bint bold, bint italic, bint underline, bint strikeout, int charset
+):
+    """The LOGFONT CalculateTextExtents builds; `wface` is copied like wcsncpy(lf.lfFaceName, face, 31)."""
+    cdef LOGFONTW lf
+    cdef Py_ssize_t face_units = (PyBytes_GET_SIZE(wface) - 2) // 2
+    memset(&lf, 0, sizeof(lf))
+    lf.lfHeight = height
+    lf.lfWeight = FW_BOLD if bold else FW_NORMAL
+    lf.lfItalic = italic
+    lf.lfUnderline = underline
+    lf.lfStrikeOut = strikeout
+    lf.lfCharSet = <BYTE>charset
+    lf.lfOutPrecision = OUT_TT_PRECIS
+    lf.lfClipPrecision = CLIP_DEFAULT_PRECIS
+    lf.lfQuality = ANTIALIASED_QUALITY
+    lf.lfPitchAndFamily = DEFAULT_PITCH | FF_DONTCARE
+    if face_units > 31:
+        face_units = 31
+    memcpy(lf.lfFaceName, PyBytes_AS_STRING(wface), face_units * sizeof(wchar_t))
+    return CreateFontIndirectW(&lf)
+
+
 def measure(
     face: str,
     height: int,
@@ -32,17 +55,14 @@ def measure(
     `height` (already multiplied by 64). Returns (width, height, descent, external leading,
     face actually selected by GDI), unscaled, or None if GDI failed.
     """
-    cdef LOGFONTW lf
     cdef HDC dc
     cdef HFONT font
     cdef HGDIOBJ old
     cdef SIZE sz
     cdef TEXTMETRICW tm
     cdef double width = 0, h = 0
-    cdef bytes wface = _wide(face)
     cdef bytes wtext = _wide(text)
     cdef Py_ssize_t units = (PyBytes_GET_SIZE(wtext) - 2) // 2
-    cdef Py_ssize_t face_units = (PyBytes_GET_SIZE(wface) - 2) // 2
     cdef const wchar_t *ptext = <const wchar_t *>PyBytes_AS_STRING(wtext)
     cdef Py_ssize_t i
     cdef wchar_t actual[32]
@@ -52,22 +72,7 @@ def measure(
         return None
     try:
         SetMapMode(dc, MM_TEXT)
-        memset(&lf, 0, sizeof(lf))
-        lf.lfHeight = height
-        lf.lfWeight = FW_BOLD if bold else FW_NORMAL
-        lf.lfItalic = italic
-        lf.lfUnderline = underline
-        lf.lfStrikeOut = strikeout
-        lf.lfCharSet = <BYTE>charset
-        lf.lfOutPrecision = OUT_TT_PRECIS
-        lf.lfClipPrecision = CLIP_DEFAULT_PRECIS
-        lf.lfQuality = ANTIALIASED_QUALITY
-        lf.lfPitchAndFamily = DEFAULT_PITCH | FF_DONTCARE
-        if face_units > 31:
-            face_units = 31
-        memcpy(lf.lfFaceName, PyBytes_AS_STRING(wface), face_units * sizeof(wchar_t))
-
-        font = CreateFontIndirectW(&lf)
+        font = _create_font(_wide(face), height, bold, italic, underline, strikeout, charset)
         if font is NULL:
             return None
         old = SelectObject(dc, font)
@@ -86,6 +91,38 @@ def measure(
             GetTextFaceW(dc, 31, actual)
             actual_face = PyUnicode_FromWideChar(actual, -1)
             return width, h, <double>tm.tmDescent, <double>tm.tmExternalLeading, actual_face
+        finally:
+            SelectObject(dc, old)
+            DeleteObject(font)
+    finally:
+        DeleteDC(dc)
+
+
+def name_table(face: str, bold: bool, italic: bool, charset: int) -> bytes | None:
+    """The OpenType 'name' table of the font GDI selects for these attributes, or None if it has
+    none (bitmap fonts) or GDI failed."""
+    cdef HDC dc
+    cdef HFONT font
+    cdef HGDIOBJ old
+    cdef DWORD size
+    cdef bytearray data
+
+    dc = CreateCompatibleDC(NULL)
+    if dc is NULL:
+        return None
+    try:
+        font = _create_font(_wide(face), 0, bold, italic, False, False, charset)
+        if font is NULL:
+            return None
+        old = SelectObject(dc, font)
+        try:
+            size = GetFontData(dc, TAG_NAME, 0, NULL, 0)
+            if size == GDI_ERROR or size == 0:
+                return None
+            data = bytearray(size)
+            if GetFontData(dc, TAG_NAME, 0, <char *>data, size) != size:
+                return None
+            return bytes(data)
         finally:
             SelectObject(dc, old)
             DeleteObject(font)

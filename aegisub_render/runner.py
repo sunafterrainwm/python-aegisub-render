@@ -185,6 +185,8 @@ def render(
     result = run_job(prepared.job, settings.timeout_seconds)
     if result.message:
         out.error(result.message)
+    if result.status == "refused":  # the message says why
+        return ExitCode.ERROR
     if result.status == "cancel":
         out.error("aegisub-render: the script cancelled the operation; no output was written")
         return ExitCode.CANCELLED

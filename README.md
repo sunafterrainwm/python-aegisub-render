@@ -63,7 +63,7 @@ uv run aegisub-render.py list in.ass --script kara-templater.lua
 | `--dry-run` | 不寫任何東西（包括 `--output -` 的 stdout），改把輸入檔到結果的 unified diff 印到 stderr；`;` 開頭的行（註解與 header）不列入比較，沒有差異時印 `No differences found.`；即使 `-q` 也會印 |
 | `--macro NAME` / `--filter NAME` | 要執行的巨集（預設 `Apply karaoke template`，之後像存檔一樣寫出）或匯出濾鏡（像 File → Export 一樣寫出：輸入檔沒有的 `[Aegisub Project Garbage]`、`[Aegisub Extradata]` 不會寫出，有的則照存檔的方式保留） |
 | `--select 1,3-5` | 選取的對白行（1 起算，只算 Dialogue/Comment 行）；預設全選 |
-| `--force` | 巨集的 validation 函式回傳 false 時仍然執行 |
+| `--force` | 巨集的 validation 函式回傳 false 時仍然執行（否則只印一行說明並以結束碼 1 結束；kara-templater 在 `[Events]` 前 51 行沒有 Effect 以 `template` 開頭的行時會回傳 false） |
 | `--trace-level N`、`-v`、`-q` | `aegisub.debug.out` 的門檻（預設 3，同 Aegisub）；`-q` 只留錯誤與腳本輸出 |
 | `--no-progress` | 不顯示進度條。stderr 是終端機時，巨集或濾鏡執行期間會在 stderr 顯示 tqdm 進度條（標題是巨集名稱，後面接 `aegisub.progress.task` 的文字），結束後留在畫面上：成功時填滿到 100%，失敗時停在當時的進度；腳本的輸出印在進度條上方 |
 | `--timeout`、`--memory-limit`、`--max-output-lines`、`--max-input-lines` | 覆蓋資源限制 |
@@ -165,7 +165,7 @@ uv run ruff check
 | 模組 | 內容 |
 |---|---|
 | `aegisub_render/lua/_luajit`（`.pyx` / `.pxd` / `.pyi`） | 靜態連結的 LuaJIT + lpeg + luabins + shim，以及 Python 綁定：`LuaState`、把 Python 函式變成 Lua C 函式的 dispatcher、`aegisub.re/unicode/lfs` 背後的 C 函式表 |
-| `aegisub_render/host/_gdi`（`.pyx` / `.pxd` / `.pyi`） | `text_extents` 用的 GDI 量測 |
+| `aegisub_render/host/_gdi`（`.pyx` / `.pxd` / `.pyi`） | `text_extents` 用的 GDI 量測；讀取選中字型的 `name` 表，用來判斷字型是否被替換（`GetTextFace` 只給使用者語言的名稱，樣式用英文名稱時不算替換） |
 | `aegisub_render/_crt`（`.pyx` / `.pyi`） | Aegisub 依賴的 C 行為：`atoi`、`strtol`、`printf("%g"/"%f")`、double→整數的 C 轉型、int64 除法。直接用 MSVC UCRT 計算，而不是用 Python 模擬（例如 `atoi` 溢位時夾到 `INT_MAX`、`strtol` 接受 `0x`、`inf`/`nan` 的寫法） |
 
 `.pxd` 是 C 宣告（LuaJIT API、shim、windows.h）。`.pyi` 是編譯時產生的：Cython 本身不會產生 stub，

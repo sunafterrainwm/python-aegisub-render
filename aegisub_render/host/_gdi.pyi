@@ -19,5 +19,10 @@ def measure(
     face actually selected by GDI), unscaled, or None if GDI failed.
     """
 
+def name_table(face: str, bold: bool, italic: bool, charset: int) -> bytes | None:
+    """The OpenType 'name' table of the font GDI selects for these attributes, or None if it has
+    none (bitmap fonts) or GDI failed.
+    """
+
 def add_private_font(path: str) -> bool:
     """AddFontResourceEx(path, FR_PRIVATE): make a font file available to this process only."""
