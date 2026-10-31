@@ -85,9 +85,7 @@ class TextExtents:
             style.scaley / 100 * extlead / 64,
         )
 
-    def glyph_ink_boxes(
-        self, style: AssStyle, text: str
-    ) -> tuple[int, list[tuple[bool, int, int, int, int]]] | None:
+    def glyph_ink_boxes(self, style: AssStyle, text: str) -> tuple[int, list[tuple[bool, int, int, int, int]]] | None:
         return _gdi.glyph_ink_boxes(
             to_wide(style.font),
             _scaled_height(style),
