@@ -1,4 +1,4 @@
-"""Run Aegisub 3.5.0 Automation 4 scripts (kara-templater and friends) headlessly."""
+"""Run Aegisub 3.5.1 Automation 4 scripts (kara-templater and friends) headlessly."""
 
 from aegisub_render.runner import ExitCode, RenderOptions, list_features, render
 from aegisub_render.settings import Settings, load_settings

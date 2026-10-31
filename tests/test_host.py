@@ -150,6 +150,40 @@ def test_aegisub_modules(run_lua: RunLua) -> None:
     assert r.result.status == "ok", r.log
 
 
+def test_new_in_3_5_1(run_lua: RunLua, tmp_path: Path) -> None:
+    """aegisub.version, and include() running the file under lua_pcall."""
+    for name, code in {
+        "inc_values.lua": "return 1, nil, 3\n",
+        "inc_error.lua": 'error("boom")\n',
+        "inc_table.lua": "error({})\n",
+        "inc_syntax.lua": "return (\n",
+    }.items():
+        (tmp_path / name).write_text(code, encoding="utf-8")
+    r = run_lua(
+        macro(
+            """
+            local v = aegisub.version
+            check(v.string == "3.5.1" and v.major == 3 and v.minor == 5 and v.patch == 1 and v.build == 9914,
+                "aegisub.version")
+            check(select("#", include("inc_values.lua")) == 3 and select(3, include("inc_values.lua")) == 3,
+                "include returns all values")
+            local function err_of(name)
+                local ok, err = pcall(function() include(name) end)
+                check(not ok, name)
+                return err
+            end
+            local e = err_of("inc_error.lua")
+            check(e:find('^[^\\n]*:%d+: Error running Lua include "inc_error.lua":\\n') and e:find(":1: boom$"), e)
+            e = err_of("inc_table.lua")
+            check(e:find(":%d+: bad argument #%-1 to 'include' %(string expected, got table%)$"), e)
+            e = err_of("inc_syntax.lua")
+            check(e:find('Error loading Lua include "inc_syntax.lua":\\n', 1, true), e)
+            """
+        )
+    )
+    assert r.result.status == "ok", r.log
+
+
 def test_subtitles_object(run_lua: RunLua) -> None:
     r = run_lua(
         macro(

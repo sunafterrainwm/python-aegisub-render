@@ -6,8 +6,8 @@
 Every random choice comes from random.Random(seed * 1000 + case number), and every template
 that uses math.random seeds it in a `code once` line, so the files and their rendered output
 are reproducible. Each case exercises a different set of kara-templater features; open them
-in Aegisub 3.5.0, run Automation > Apply karaoke template, save, and drop the result into
-tests/aegisub/ to turn the snapshot test into a comparison against real Aegisub output.
+in Aegisub 3.5.1, export them with File > Export Subtitles and the "Karaoke template" filter,
+and drop the result into tests/aegisub/ (tests/test_cases.py compares against it).
 """
 
 import argparse

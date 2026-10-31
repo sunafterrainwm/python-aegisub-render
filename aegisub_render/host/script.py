@@ -15,6 +15,7 @@ from aegisub_render.lua.state import NIL, LuaError, LuaRef, LuaState, PyFunc, Py
 from aegisub_render.output import Output
 from aegisub_render.paths import AegisubPaths, join
 from aegisub_render.textenc import from_bytes
+from aegisub_render.version import AEGISUB_BUILD, AEGISUB_VERSION, AEGISUB_VERSION_STRING
 from aegisub_render.video.context import VideoContext
 from aegisub_render.video.vfr import START
 
@@ -148,6 +149,13 @@ class ScriptHost:
             "moonscript_path": str(support),
             "moonscript_fallback": str(Path(str(resources.files("aegisub_render.host") / "lua" / "moonscript.lua"))),
             "trace_level": cfg.trace_level,
+            "aegisub_version": {
+                "string": AEGISUB_VERSION_STRING,
+                "major": AEGISUB_VERSION[0],
+                "minor": AEGISUB_VERSION[1],
+                "patch": AEGISUB_VERSION[2],
+                "build": AEGISUB_BUILD,
+            },
             "impls": impls.install(),
         }
         code = (resources.files("aegisub_render.host") / "lua" / "bootstrap.lua").read_bytes()

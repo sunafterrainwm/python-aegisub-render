@@ -1,12 +1,12 @@
 # Builds the extension modules of aegisub-render (run native/build.py, which also checks the
 # vendored sources, copies the results into the package and generates their .pyi stubs):
 #
-#   aegisub_render/lua/_luajit.pyd  - LuaJIT as Aegisub 3.5.0 builds it, plus lpeg, luabins and the
+#   aegisub_render/lua/_luajit.pyd  - LuaJIT as Aegisub 3.5.1 builds it, plus lpeg, luabins and the
 #                                     host shim, with the Cython binding (_luajit.pyx/.pxd)
 #   aegisub_render/host/_gdi.pyd    - GDI text measurement for aegisub.text_extents (_gdi.pyx/.pxd)
 #   aegisub_render/_crt.pyd         - C runtime behaviour (atoi, strtol, printf %g/%f, C casts)
 #
-# The Lua runtime mirrors Aegisub v3.5.0 (meson.build, libaegisub/meson.build, subprojects/):
+# The Lua runtime mirrors Aegisub v3.5.1 (unchanged since v3.5.0: meson.build, libaegisub/meson.build, subprojects/):
 #   - LuaJIT from native/subprojects/luajit.wrap (copied verbatim, same source/patch sha256),
 #     with the exact options Aegisub sets: static, amalgam, lua52compat, no luajit binary
 #   - luabins from native/subprojects/luabins (copied verbatim)
@@ -27,7 +27,7 @@ project('aegisub_render', ['c', 'cython'],
             'luajit:lua52compat=true',
             'luajit:luajit=false',
         ],
-        version: '3.5.0')
+        version: '3.5.1')
 
 py = import('python').find_installation(pure: false)
 cc = meson.get_compiler('c')

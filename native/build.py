@@ -9,8 +9,8 @@ Requirements: Visual Studio 2022 (or Build Tools) with the C++ x64 toolchain; Cy
 and ninja come from the `build` dependency group. Meson runs under this Python, so the modules
 are built for it (CPython 3.14).
 
-Every vendored input is checked against the sha256 it has in the Aegisub v3.5.0 source
-snapshot before building; the LuaJIT source tarball and its meson wrapdb patch are
+Every vendored input is checked against the sha256 it has in the Aegisub v3.5.1 source
+snapshot (the same as in v3.5.0) before building; the LuaJIT source tarball and its meson wrapdb patch are
 verified by meson itself through the hashes in subprojects/luajit.wrap (copied verbatim
 from Aegisub).
 """
@@ -32,8 +32,8 @@ MODULES: dict[str, Path] = {
     "_crt": ROOT / "aegisub_render",
 }
 
-# sha256 of the files copied from the Aegisub v3.5.0 source snapshot
-# (https://github.com/TypesettingTools/Aegisub/archive/refs/tags/v3.5.0.zip).
+# sha256 of the files copied from the Aegisub v3.5.1 source snapshot
+# (https://github.com/TypesettingTools/Aegisub/archive/refs/tags/v3.5.1.zip; unchanged since v3.5.0).
 VENDORED: dict[str, str] = {
     "subprojects/luajit.wrap": "3bad67fc4af0625152c059c5f22d1b67677814e2757a5307b8debd0e54d4177f",
     "src/lpeg.c": "78b8469d543383a69bb3e5fcc8a65fb5ee61fd1672baaa11958917b16868e8ef",
@@ -64,7 +64,7 @@ def sha256(path: Path) -> str:
 def verify_vendored() -> None:
     bad = [name for name, digest in VENDORED.items() if sha256(NATIVE / name) != digest]
     if bad:
-        raise SystemExit("vendored files differ from Aegisub v3.5.0:\n  " + "\n  ".join(bad))
+        raise SystemExit("vendored files differ from Aegisub v3.5.1:\n  " + "\n  ".join(bad))
 
 
 def msvc_environment() -> dict[str, str]:

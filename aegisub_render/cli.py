@@ -94,7 +94,7 @@ def _common(p: argparse.ArgumentParser) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="aegisub-render", description="Run Aegisub 3.5.0 automation scripts headlessly."
+        prog="aegisub-render", description="Run Aegisub 3.5.1 automation scripts headlessly."
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

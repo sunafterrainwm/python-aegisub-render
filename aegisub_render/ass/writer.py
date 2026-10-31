@@ -7,9 +7,8 @@ from aegisub_render.ass.codec import inline_string_encode, uuencode
 from aegisub_render.ass.entries import GROUP_HEADERS, AnyEntry, Group, ProjectProperties
 from aegisub_render.ass.file import AssFile
 from aegisub_render.textenc import to_bytes
-from aegisub_render.version import __version__
+from aegisub_render.version import AEGISUB_VERSION_STRING, __version__
 
-AEGISUB_VERSION_STRING = "3.5.0"
 LINEBREAK = "\r\n"
 
 _FORMAT = {

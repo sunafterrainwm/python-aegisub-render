@@ -1,6 +1,6 @@
 -- aegisub-render host bootstrap.
 --
--- Lua-side half of the Automation 4 host. This reproduces what Aegisub 3.5.0 does in C++
+-- Lua-side half of the Automation 4 host. This reproduces what Aegisub 3.5.1 does in C++
 -- (src/auto4_lua.cpp, auto4_lua_assfile.cpp, auto4_lua_progresssink.cpp and
 -- libaegisub/lua/{script_reader,utils,modules}.cpp); the Python side only stores data and
 -- talks to the operating system. Python functions arrive as C functions (see lua/_luajit.pyx)
@@ -486,7 +486,18 @@ _G.include = function(...)
 	if not f then
 		api_error(1, sformat('Error loading Lua include "%s":\n%s', filename, tostring(err)))
 	end
-	return f()
+	-- Since 3.5.1 the include runs under lua_pcall, and its error goes through check_string(L, -1)
+	local r = pack(pcall(f))
+	if not r[1] then
+		local e = r[2]
+		if type(e) == "number" then
+			e = tostring(e)
+		elseif type(e) ~= "string" then
+			typerror(1, -1, "string", type(e))
+		end
+		api_error(1, sformat('Error running Lua include "%s":\n%s', filename, e))
+	end
+	return unpack(r, 2, r.n)
 end
 
 apply_sandbox()
@@ -706,7 +717,7 @@ local function make_subs(sid, can_modify, can_set_undo)
 				ids[#ids + 1] = id
 			end
 		else
-			-- Aegisub 3.5.0 reads the stack top (the last argument) on every iteration
+			-- Aegisub 3.5.x reads the stack top (the last argument) on every iteration
 			local last = select(itemcount, ...)
 			while itemcount > 0 do
 				local id = check_uint(level + 1, -1, last)
@@ -779,7 +790,7 @@ local function make_subs(sid, can_modify, can_set_undo)
 			check_bounds(n)
 			P.subs_assign(sid, n, to_entry(1, v))
 		else
-			-- Aegisub 3.5.0 removes the object and the index before delegating to delete,
+			-- Aegisub 3.5.x removes the object and the index before delegating to delete,
 			-- leaving only the nil value on the stack
 			do_delete(1, nil)
 		end
@@ -908,6 +919,12 @@ aegisub.decode_path = function(...)
 end
 aegisub.cancel = function() error(nil, 0) end
 aegisub.lua_automation_version = 4
+-- push_version (new in 3.5.1); "build" is left out when unknown, as for a shallow clone
+do
+	local v = cfg.aegisub_version
+	aegisub.version = { string = v.string, major = v.major, minor = v.minor, patch = v.patch }
+	if v.build ~= 0 then aegisub.version.build = v.build end
+end
 aegisub.__init_clipboard = function() error(CLIPBOARD_MSG, 2) end
 aegisub.__raise_warning = function(...)
 	warnings[#warnings + 1] = (...)
