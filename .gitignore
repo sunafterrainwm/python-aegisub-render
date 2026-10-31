@@ -33,3 +33,6 @@ dist/
 /tests/.fonts/
 /native/subprojects/.wraplock
 .mypy_cache/
+
+# memory-bank/activeContext.md is this machine's working notes, not part of the repository
+/memory-bank/activeContext.md
