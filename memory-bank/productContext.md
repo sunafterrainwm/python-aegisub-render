@@ -15,6 +15,9 @@
 - `--filter NAME`：執行匯出濾鏡，像 File → Export 一樣寫出（沒有 Project Garbage／Extradata；但輸入本來有的話保留）。
 - `--macro NAME`、`--script`、`--select`、`--force`（validation 回傳 false 時仍執行；否則只印一行說明）。
 - 進度條：stderr 是終端機時用 tqdm 顯示，結束後留在畫面上（成功補到 100%）。
+- `aegisub-render macro offset in.ass ±時間|±幀數`：不經 Lua 平移所有事件的時間（輸出選項同 render）。
+- `aegisub-render macro measure "文字" --font … --fontsize …`（或 `--ass … --style …`）：量測寬高、逐字位置、
+  筆畫留白與 karaskel 相容的對齊座標，輸出 JSON。
 - `scripts/build_exe.py` 產生 `aegisub-render.exe`（distlib 啟動器包裝 `.venv\Scripts\python.exe aegisub-render.py`，
   內含絕對路徑，repo 或 .venv 搬家後要重建；已 gitignore）。
 

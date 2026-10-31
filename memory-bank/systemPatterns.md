@@ -6,6 +6,9 @@
 執行（父行程負責 120 秒逾時）→ `worker.execute()` 建 `ScriptHost`、載入腳本、跑巨集／濾鏡 →
 `runner.output_data()` 決定寫法（巨集＝Save，濾鏡＝Export）→ 原子性寫檔／stdout／dry-run diff。
 
+內建巨集（`macro/`）不走 worker：`macro offset` 讀檔 → 平移 → 共用 `runner._write_output`；
+`macro measure` 直接用 `TextExtents`／`_gdi` 量測並輸出 JSON。
+
 ## Lua host
 
 - `host/lua/bootstrap.lua` 是 host 的 Lua 半邊，重現 `auto4_lua*.cpp` 與 `libaegisub/lua/*.cpp`；Python 只存資料與碰作業系統。
@@ -32,5 +35,5 @@ PyAV 讀取，模仿 FFMS2 provider；結果快取在 `%TEMP%\aegisub-render\<sh
 
 ## 原生模組
 
-`_luajit`（LuaJIT＋lpeg＋luabins＋`native/src/shim.c`）、`_gdi`（text_extents、字型 name 表）、`_crt`。
+`_luajit`（LuaJIT＋lpeg＋luabins＋`native/src/shim.c`）、`_gdi`（text_extents、字型 name 表、`glyph_ink_boxes` 筆畫邊界）、`_crt`。
 `native/build.py`：驗證 vendored 檔案的 sha256 → MSVC 環境 → meson/ninja → 複製 `.pyd` → `native/stubgen.py` 產生 `.pyi`。

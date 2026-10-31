@@ -99,6 +99,27 @@ Aegisub 執行巨集或濾鏡時開的進度對話框，在這裡是 worker 行�
 濾鏡名稱（同 `LuaThreadedCall` 的對話框標題），`aegisub.progress.title/task/set` 更新標題、尾端文字與百分比。腳本輸出
 先清掉進度條再印、印完重畫；輸出停在行中間時暫不重畫，以免蓋掉那一行。執行結束後進度條留在畫面上，成功時補到 100%。
 
+## 內建巨集（`macro`）
+
+`aegisub-render macro` 是不需要 Aegisub 腳本、也不啟動 Lua worker 的 Python 操作（`aegisub_render/macro/`）。
+輸出沿用 `render` 的路徑（`runner._read_input_ass`／`_write_output`：就地覆寫、`-o`、`-o -`、`-y`/`-n`、`--dry-run`），
+寫出時照 Save（`serialize_ass`）。
+
+- **`macro offset`**：把所有 `[Events]` 行（含 Comment）的開始／結束時間平移。
+  - 時間：`[+-][[[hh:]mm:]ss].ms`，必須有小數點以和幀數區分；小數取到毫秒（`.5` = 500 ms）。
+  - 幀數：`[+-]frames`，需要影片、時間碼或 `--fps`（影片參數與連結檔的處理和 `render` 相同），否則報錯且不寫檔。
+    新時間是目標幀的 `Framerate.time_at_frame(i, START)`（`i > 0` 時是前後兩幀時間的中點，`i <= 0` 為 0）。
+  - 結果夾限在 `0 .. 9:59:59.99`。
+- **`macro measure`**：輸出 JSON。
+  - 樣式來自參數（`--font`/`--fontsize`…）或 `--ass` 檔裡的樣式（`--style`，同時取得 PlayRes），各欄位可再覆寫；
+    `--video-size` 時照 karaskel 的公式加上水平修正係數。
+  - 寬高與逐字位置用和 `text_extents` 相同的 GDI 量測（64 倍字號）；整行寬度以整行一次量測為準，逐字位置是逐字累加。
+  - 筆畫留白用 `_gdi.glyph_ink_boxes`（`GetGlyphOutlineW` + `GGO_NATIVE`，點陣字型退回 `GGO_METRICS`）；
+    空白字元沒有筆畫；筆畫超出字元格時留白忠實地是負值（左＋筆畫＋右恆等於寬）。
+  - 位置照 `karaskel.preproc_line_pos`：`--an` + `--margins`（含有效邊距）或 `--an` + `--pos`；有版面時逐字附上
+    `sleft`/`scenter`/… 等畫面座標。
+- CLI 把 `-` 後接數字或小數點的參數一律視為值（`_negative_number_matcher`），否則 `-0:01:00.00` 會被當成旗標。
+
 ## 測試
 
 `scripts/gen_cases.py` 以固定 seed 產生案例。`tests/aegisub/` 是 Aegisub 3.5.1 以 `Karaoke template` 濾鏡匯出的結果（與 3.5.0 匯出的檔案只差 header 的版本號）：

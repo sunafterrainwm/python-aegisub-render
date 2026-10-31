@@ -3,7 +3,7 @@
 ## 工具鏈
 
 - CPython 3.14（`C:\Program Files\Python314`）＋ uv；`[tool.uv] package = false`，預設 group 是 `dev`
-  （basedpyright、pytest、ruff、distlib）；`build` group 是 cython、meson、ninja。
+  （basedpyright、pytest、ruff、distlib，以及 cython、meson、ninja）；`build` group 也有 cython、meson、ninja。
 - 執行期依賴：`av`（PyAV）、`regex`、`tqdm`。
 - 原生建置：Visual Studio 2022 C++ x64、meson（根目錄 `meson.build`，subproject 在 `native/subprojects/`）、動態 CRT。
 
@@ -15,6 +15,7 @@ uv run pytest                                      # pytest 設定含 -p no:faul
 uv run basedpyright                                # strict，要 0 errors
 uv run ruff check ; uv run ruff format --check
 uv run --group build python native/build.py        # 重編 .pyd 並重新產生 .pyi（tests/test_stubs.py 檢查一致）
+                                                   # repo 搬家後先刪 native/builddir
 AEGISUB_RENDER_UPDATE_SNAPSHOTS=1 uv run pytest tests/test_cases.py   # 重新記錄 snapshot
 uv run python scripts/gen_cases.py                 # 以固定 seed 重新產生測試案例（CRLF）
 uv run python scripts/build_exe.py                 # 產生 aegisub-render.exe
