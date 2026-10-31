@@ -1,4 +1,4 @@
-"""The font substitution warning of aegisub.text_extents (GDI)."""
+"""The font substitution warning of aegisub.text_extents (GDI) and macro.measure."""
 
 import struct
 
@@ -7,6 +7,12 @@ import pytest
 from aegisub_render.ass.entries import AssStyle
 from aegisub_render.host import _gdi
 from aegisub_render.host.text_extents import TextExtents, font_names
+from aegisub_render.macro.measure import (
+    MarginLayout,
+    MeasureStyle,
+    PosLayout,
+    measure_text,
+)
 
 
 def style(font: str) -> AssStyle:
@@ -57,3 +63,72 @@ def test_missing_font_warns_once() -> None:
     te.measure(style("NoSuchFont 4cd1"), "y")
     assert len(te.warnings) == 1
     assert te.warnings[0].startswith("aegisub-render: font 'NoSuchFont 4cd1' is not installed; Windows substituted")
+
+
+def test_measure_text_metrics_and_ink_padding() -> None:
+    ms = MeasureStyle(font="Arial", fontsize=48, scalex=100, scaley=100, spacing=2)
+    res = measure_text(ms, "A B")
+    assert res.text == "A B"
+    assert res.width > 0 and res.height > 0
+    assert len(res.chars) == 3
+    assert [c.char for c in res.chars] == ["A", " ", "B"]
+
+    # Per-character relative horizontal span is contiguous
+    assert res.chars[0].left == 0.0
+    assert res.chars[0].right == pytest.approx(res.chars[1].left)
+    assert res.chars[1].right == pytest.approx(res.chars[2].left)
+    assert res.chars[2].right == pytest.approx(res.width)
+
+    # Non-whitespace characters have positive ink dimensions and padding summing to cell dimensions
+    for idx in (0, 2):
+        c = res.chars[idx]
+        assert c.ink_width > 0 and c.ink_height > 0
+        assert c.padding_left + c.ink_width + c.padding_right == pytest.approx(c.width)
+        assert c.padding_top + c.ink_height + c.padding_bottom == pytest.approx(c.height)
+
+    # Space has zero ink
+    sp = res.chars[1]
+    assert sp.ink_width == 0.0 and sp.ink_height == 0.0
+    assert sp.padding_left == sp.width and sp.padding_top == sp.height
+
+    # Line ink + padding sums to line width / height
+    assert res.padding_left + res.ink_width + res.padding_right == pytest.approx(res.width)
+    assert res.padding_top + res.ink_height + res.padding_bottom == pytest.approx(res.height)
+    assert res.position is None
+
+
+def test_measure_text_karaskel_margin_and_pos_layouts() -> None:
+    ms = MeasureStyle(font="Arial", fontsize=40)
+
+    # 1. an + margins (align=2 bottom-center, margins 10, 20, 30 on 1280x720)
+    res_m = measure_text(ms, "Hi", MarginLayout(align=2, margin_l=10, margin_r=20, margin_v=30, res_x=1280, res_y=720))
+    pos_m = res_m.position
+    assert pos_m is not None
+    assert pos_m.align == 2
+    assert pos_m.halign == "center" and pos_m.valign == "bottom"
+    assert pos_m.left == pytest.approx((1280 - 10 - 20 - res_m.width) / 2.0 + 10)
+    assert pos_m.center == pytest.approx(pos_m.left + res_m.width / 2.0)
+    assert pos_m.hcenter == pytest.approx(pos_m.center)
+    assert pos_m.right == pytest.approx(pos_m.left + res_m.width)
+    assert pos_m.bottom == pytest.approx(720 - 30)
+    assert pos_m.middle == pytest.approx(pos_m.bottom - res_m.height / 2.0)
+    assert pos_m.vcenter == pytest.approx(pos_m.middle)
+    assert pos_m.top == pytest.approx(pos_m.bottom - res_m.height)
+    assert pos_m.x == pytest.approx(pos_m.center)
+    assert pos_m.y == pytest.approx(pos_m.bottom)
+    assert (pos_m.eff_margin_l, pos_m.eff_margin_r, pos_m.eff_margin_v) == (10, 20, 30)
+    assert res_m.chars[0].sleft == pytest.approx(pos_m.left)
+    assert res_m.chars[0].x == pytest.approx(res_m.chars[0].scenter)
+    assert res_m.chars[0].y == pytest.approx(pos_m.bottom)
+
+    # 2. an + pos (align=5 middle-center at (640, 360))
+    res_p = measure_text(ms, "Hi", PosLayout(align=5, x=640.0, y=360.0))
+    pos_p = res_p.position
+    assert pos_p is not None
+    assert pos_p.halign == "center" and pos_p.valign == "middle"
+    assert pos_p.x == 640.0 and pos_p.y == 360.0
+    assert pos_p.left == pytest.approx(640.0 - res_p.width / 2.0)
+    assert pos_p.right == pytest.approx(640.0 + res_p.width / 2.0)
+    assert pos_p.top == pytest.approx(360.0 - res_p.height / 2.0)
+    assert pos_p.bottom == pytest.approx(360.0 + res_p.height / 2.0)
+    assert pos_p.eff_margin_v is None

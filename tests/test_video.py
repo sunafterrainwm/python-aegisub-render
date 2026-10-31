@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from aegisub_render.macro.offset import Offset, parse_offset, shift_time_by_frames
 from aegisub_render.video.context import parse_framerate
 from aegisub_render.video.keyframes import load_keyframes
 from aegisub_render.video.probe import parse_dummy
@@ -65,3 +66,35 @@ def test_dummy_spec() -> None:
     assert (d.fps, d.frames, d.width, d.height) == ("23.976000", 40000, 1920, 1080)
     with pytest.raises(ValueError, match="Too few fields"):
         parse_dummy("?dummy:23.976:100:1:1")
+
+
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [
+        ("+0:00:01.50", Offset(1500, by_frames=False)),
+        ("-0:01:02.345", Offset(-62345, by_frames=False)),
+        ("+1:02:03.4", Offset(3723400, by_frames=False)),
+        ("+12.05", Offset(12050, by_frames=False)),
+        ("-.25", Offset(-250, by_frames=False)),
+        ("+.005", Offset(5, by_frames=False)),
+        ("0:00:01.00", Offset(1000, by_frames=False)),
+        ("+24", Offset(24, by_frames=True)),
+        ("-10", Offset(-10, by_frames=True)),
+        ("0", Offset(0, by_frames=True)),
+    ],
+)
+def test_parse_offset(spec: str, expected: Offset) -> None:
+    assert parse_offset(spec) == expected
+
+
+@pytest.mark.parametrize("bad", ["", "abc", "1:2:3:4.5", "+.", "+1:2", "+:1.0", "+1:.0"])
+def test_parse_offset_invalid(bad: str) -> None:
+    with pytest.raises(ValueError, match="bad offset"):
+        parse_offset(bad)
+
+
+def test_shift_time_by_frames() -> None:
+    fr = Framerate.from_fps(25.0)
+    assert shift_time_by_frames(1000, -25, fr) == 0
+    assert shift_time_by_frames(1000, -30, fr) == 0
+    assert shift_time_by_frames(1000, 1, fr) == 1020

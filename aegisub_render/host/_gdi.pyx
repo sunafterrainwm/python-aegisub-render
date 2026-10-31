@@ -98,6 +98,80 @@ def measure(
         DeleteDC(dc)
 
 
+def glyph_ink_boxes(
+    face: str,
+    height: int,
+    bold: bool,
+    italic: bool,
+    underline: bool,
+    strikeout: bool,
+    charset: int,
+    text: str,
+) -> tuple[int, list[tuple[bool, int, int, int, int]]] | None:
+    """Query GetTextMetricsW + GetGlyphOutlineW for each character in `text`.
+
+    Returns `(tmAscent, [(has_ink, origin_x, origin_y, blackbox_x, blackbox_y), ...])`, unscaled,
+    or None if GDI failed.
+    """
+    cdef HDC dc
+    cdef HFONT font
+    cdef HGDIOBJ old
+    cdef TEXTMETRICW tm
+    cdef GLYPHMETRICS gm
+    cdef MAT2 mat
+    cdef DWORD res, res_m
+    cdef UINT code
+    cdef bint has_ink
+    cdef list boxes = []
+    cdef str ch
+
+    memset(&mat, 0, sizeof(mat))
+    mat.eM11.value = 1
+    mat.eM22.value = 1
+
+    dc = CreateCompatibleDC(NULL)
+    if dc is NULL:
+        return None
+    try:
+        SetMapMode(dc, MM_TEXT)
+        font = _create_font(_wide(face), height, bold, italic, underline, strikeout, charset)
+        if font is NULL:
+            return None
+        old = SelectObject(dc, font)
+        try:
+            if not GetTextMetricsW(dc, &tm):
+                return None
+            for ch in text:
+                memset(&gm, 0, sizeof(gm))
+                code = <UINT>ord(ch)
+                res = GetGlyphOutlineW(dc, code, GGO_NATIVE, &gm, 0, NULL, &mat)
+                if res == GDI_ERROR:
+                    res_m = GetGlyphOutlineW(dc, code, GGO_METRICS, &gm, 0, NULL, &mat)
+                    has_ink = (
+                        res_m != GDI_ERROR
+                        and not ch.isspace()
+                        and gm.gmBlackBoxX > 0
+                        and gm.gmBlackBoxY > 0
+                    )
+                else:
+                    has_ink = res > 0 and gm.gmBlackBoxX > 0 and gm.gmBlackBoxY > 0
+                boxes.append(
+                    (
+                        bool(has_ink),
+                        <int>gm.gmptGlyphOrigin.x,
+                        <int>gm.gmptGlyphOrigin.y,
+                        <int>gm.gmBlackBoxX,
+                        <int>gm.gmBlackBoxY,
+                    )
+                )
+            return <int>tm.tmAscent, boxes
+        finally:
+            SelectObject(dc, old)
+            DeleteObject(font)
+    finally:
+        DeleteDC(dc)
+
+
 def name_table(face: str, bold: bool, italic: bool, charset: int) -> bytes | None:
     """The OpenType 'name' table of the font GDI selects for these attributes, or None if it has
     none (bitmap fonts) or GDI failed."""

@@ -57,6 +57,14 @@ uv run aegisub-render.py render in.ass -o out.ass --filter "Karaoke template"
 
 # 列出腳本註冊的巨集與匯出濾鏡
 uv run aegisub-render.py list in.ass --script kara-templater.lua
+
+# 不啟動 Aegisub / Lua worker，直接以時間戳（[+-][[[hh:]mm:]ss].ms）或幀數（[+-]frames）偏移字幕時間
+uv run aegisub-render.py macro offset in.ass +0:00:01.50 -o out.ass
+uv run aegisub-render.py macro offset in.ass -24 --fps 24000/1001 -o out.ass
+
+# 量測文字長寬、筆畫上下左右留白、逐字位置，以及 karaskel.lua 相容的對齊座標（輸出 JSON）
+uv run aegisub-render.py macro measure "測試文字" --font "Microsoft JhengHei" --fontsize 48 --an 2 --margins 10,10,20
+uv run aegisub-render.py macro measure "測試文字" --ass in.ass --style Default --an 5 --pos 640,360
 ```
 
 `--script` 不是路徑時，依序在 `?user`、`?data` 的 autoload 目錄找（與 Aegisub 的 `Path/Automation/Autoload` 設定相同）。
@@ -90,10 +98,30 @@ repo 根目錄需要在 `sys.path` 上（例如在 repo 根目錄執行，或自
 
 ```python
 from pathlib import Path
-from aegisub_render import ExitCode, RenderOptions, load_settings, render
+from aegisub_render import (
+    ExitCode,
+    MarginLayout,
+    MeasureStyle,
+    PosLayout,
+    RenderOptions,
+    load_settings,
+    measure_text,
+    offset,
+    render,
+)
 
 code = render(Path("song.ass"), Path("song.fx.ass"), load_settings(), RenderOptions(trace_level=4))
 assert code is ExitCode.OK
+
+code = offset(Path("song.ass"), Path("song.shifted.ass"), "+0:00:01.50")
+assert code is ExitCode.OK
+
+metrics = measure_text(
+    MeasureStyle(font="Microsoft JhengHei", fontsize=48, bold=True, spacing=1.0),
+    "測試",
+    MarginLayout(align=2, margin_l=10, margin_r=10, margin_v=20, res_x=1920, res_y=1080),
+)
+print(metrics.to_json())
 ```
 
 ## 設定（`config.py`）

@@ -13,7 +13,10 @@ dependencies = [
 [dependency-groups]
 dev = [
     "basedpyright>=1.29",
+    "cython>=3.3.0",
     "distlib>=0.3.9",
+    "meson>=1.12.1",
+    "ninja>=1.13.2",
     "pytest>=8.3",
     "ruff>=0.11",
 ]

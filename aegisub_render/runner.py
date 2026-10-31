@@ -1,4 +1,4 @@
-"""Public entry points: render a subtitle file, or list a script's features."""
+"""Public entry points: render a subtitle file or list a script's features."""
 
 import multiprocessing
 import sys
@@ -19,7 +19,7 @@ from aegisub_render.settings import Settings, automation_dirs, read_aegisub_opti
 from aegisub_render.video.context import VideoOptions, build_video_context
 from aegisub_render.worker import FeatureList, Job, Result, worker_main
 
-STDOUT: Final = "-"  # render() output path meaning standard output
+STDOUT: Final = "-"  # render() / offset() / measure() output path meaning standard output
 
 
 class ExitCode(IntEnum):
@@ -66,6 +66,18 @@ def resolve_script(name: str, paths: AegisubPaths, autoload_option: str) -> Path
     raise RenderError(f"script {name!r} not found in the autoload directories ({autoload_option})")
 
 
+def _read_input_ass(input_path: Path, max_input_lines: int) -> AssFile:
+    try:
+        ass = read_ass_file(input_path)
+    except (UnsupportedEncodingError, SubtitleFormatParseError) as e:
+        raise RenderError(f"could not read {input_path}: {e}") from None
+    if ass.line_count() > max_input_lines:
+        raise RenderError(
+            f"{input_path} has {ass.line_count()} lines, more than the limit of {max_input_lines} (MAX_INPUT_LINES)"
+        )
+    return ass
+
+
 def prepare(
     input_path: Path, settings: Settings, options: RenderOptions, out: Output, save_to: Path | None = None
 ) -> Prepared:
@@ -79,15 +91,7 @@ def prepare(
     paths.set_token("?script", str(input_path.parent))
     aeg = read_aegisub_options(paths)
 
-    try:
-        ass = read_ass_file(input_path)
-    except (UnsupportedEncodingError, SubtitleFormatParseError) as e:
-        raise RenderError(f"could not read {input_path}: {e}") from None
-    if ass.line_count() > settings.max_input_lines:
-        raise RenderError(
-            f"{input_path} has {ass.line_count()} lines, more than the limit of "
-            f"{settings.max_input_lines} (MAX_INPUT_LINES)"
-        )
+    ass = _read_input_ass(input_path, settings.max_input_lines)
 
     vopts = options.video
     vopts.open_audio = aeg.open_audio
@@ -128,6 +132,32 @@ def output_data(prepared: Prepared, ass: AssFile) -> bytes:
     if prepared.job.filter is not None:
         return serialize_export(ass, prepared.save_ui_state)
     return serialize_ass(ass, prepared.save_ui_state)
+
+
+def _write_output(
+    data: bytes,
+    original: bytes,
+    input_path: Path,
+    output_path: Path | Literal["-"] | None,
+    save_to: Path,
+    dry_run: bool,
+    out: Output,
+) -> ExitCode:
+    if dry_run:
+        new_name = str(output_path if output_path is not None else input_path)
+        out.diff(unified_diff(text_lines(original), text_lines(data), str(input_path), new_name))
+        return ExitCode.OK
+    if output_path == STDOUT:
+        sys.stdout.flush()
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
+        return ExitCode.OK
+    try:
+        write_ass_file(data, save_to)
+    except OSError as e:
+        out.error(f"aegisub-render: could not write {save_to}: {e}")
+        return ExitCode.ERROR
+    return ExitCode.OK
 
 
 def run_job(job: Job, timeout: float) -> Result:
@@ -194,21 +224,7 @@ def render(
         out.error("aegisub-render: the script failed; no output was written")
         return ExitCode.ERROR
     data = output_data(prepared, result.ass)
-    if options.dry_run:
-        new_name = str(output_path if output_path is not None else input_path)
-        out.diff(unified_diff(text_lines(original), text_lines(data), str(input_path), new_name))
-        return ExitCode.OK
-    if output_path == STDOUT:
-        sys.stdout.flush()
-        sys.stdout.buffer.write(data)
-        sys.stdout.buffer.flush()
-        return ExitCode.OK
-    try:
-        write_ass_file(data, save_to)
-    except OSError as e:
-        out.error(f"aegisub-render: could not write {save_to}: {e}")
-        return ExitCode.ERROR
-    return ExitCode.OK
+    return _write_output(data, original, input_path, output_path, save_to, options.dry_run, out)
 
 
 def list_features(

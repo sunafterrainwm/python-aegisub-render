@@ -236,6 +236,117 @@ def test_list(tmp_path: Path, settings: Settings) -> None:
     assert "Apply karaoke template" in r.stdout and "Karaoke template" in r.stdout
 
 
+def test_offset_by_timestamp(tmp_path: Path) -> None:
+    """macro offset runs without an Aegisub installation and shifts by [+-][[[hh:]mm:]ss].ms."""
+    src = write(tmp_path / "in.ass", MINIMAL_ASS)
+    out = tmp_path / "out.ass"
+    no_aegisub = tmp_path / "no-aegisub"
+    r = cli("macro", "offset", str(src), "+0:01:02.50", "-o", str(out), "--aegisub-root", str(no_aegisub))
+    assert r.returncode == 0, r.stderr
+    text = out.read_text(encoding="utf-8-sig")
+    assert "Dialogue: 0,0:01:03.50,0:01:05.50,Default,,0,0,0,,{\\k20}first {\\k30}line" in text
+    assert "Dialogue: 0,0:01:06.50,0:01:08.50,Default,actor,0,0,0,karaoke,second line" in text
+
+    # Negative shift clamps at 0:00:00.00
+    r = cli("macro", "offset", str(src), "-2.5", "-o", str(out), "-y", "--aegisub-root", str(no_aegisub))
+    assert r.returncode == 0, r.stderr
+    text = out.read_text(encoding="utf-8-sig")
+    assert "Dialogue: 0,0:00:00.00,0:00:00.50,Default,,0,0,0,,{\\k20}first {\\k30}line" in text
+    assert "Dialogue: 0,0:00:01.50,0:00:03.50,Default,actor,0,0,0,karaoke,second line" in text
+
+
+def test_offset_by_frames(tmp_path: Path) -> None:
+    """Frame offset uses the video option group and maps frame i to 0:00:00.00 when i == 0
+    (or i < 0) and (time_of_frame(i - 1) + time_of_frame(i)) / 2 otherwise."""
+    src = write(tmp_path / "in.ass", MINIMAL_ASS)
+    out = tmp_path / "out.ass"
+
+    # Without video/timecodes/--fps, frame offset is an error
+    r = cli("macro", "offset", str(src), "+10", "-o", str(out))
+    assert r.returncode == 1
+    assert "cannot shift by frames" in r.stderr
+    assert not out.exists()
+
+    # CFR 25 fps (40ms per frame):
+    # line 1: 1000ms (frame 25) .. 3000ms (frame 75)
+    # shift by -25 frames -> frame 0 (0:00:00.00) .. frame 50 ((1960 + 2000)/2 = 1980ms = 0:00:01.98)
+    # line 2: 4000ms (frame 100) .. 6000ms (frame 150)
+    # shift by -25 frames -> frame 75 ((2960 + 3000)/2 = 2980ms = 0:00:02.98) .. frame 125 (4980ms = 0:00:04.98)
+    r = cli("macro", "offset", str(src), "-25", "-o", str(out), "--fps", "25")
+    assert r.returncode == 0, r.stderr
+    text = out.read_text(encoding="utf-8-sig")
+    assert "Dialogue: 0,0:00:00.00,0:00:01.98,Default,,0,0,0,,{\\k20}first {\\k30}line" in text
+    assert "Dialogue: 0,0:00:02.98,0:00:04.98,Default,actor,0,0,0,karaoke,second line" in text
+
+    # VFR timecodes file: frames at [0, 40, 80, 100, 140, 200] ms
+    tc = tmp_path / "tc.txt"
+    tc.write_text("# timecode format v2\n0\n40\n80\n100\n140\n200\n", encoding="utf-8")
+    vfr_ass = MINIMAL_ASS.replace("0:00:01.00,0:00:03.00", "0:00:00.04,0:00:00.10")
+    write(src, vfr_ass)
+    # 40ms is frame 1, 100ms is frame 3; shift by +1 -> frame 2 ((40+80)/2=60ms=0:00:00.06) and frame 4 ((100+140)/2=120ms=0:00:00.12)
+    r = cli("macro", "offset", str(src), "+1", "-o", str(out), "-y", "--timecodes", str(tc))
+    assert r.returncode == 0, r.stderr
+    text = out.read_text(encoding="utf-8-sig")
+    assert "Dialogue: 0,0:00:00.06,0:00:00.12,Default,,0,0,0,,{\\k20}first {\\k30}line" in text
+
+    # Dummy video via --video
+    r = cli("macro", "offset", str(src), "-1", "--dry-run", "--video", "?dummy:25.000000:1000:1280:720:0:0:0:")
+    assert r.returncode == 0, r.stderr
+    assert "+Dialogue: 0,0:00:00.00,0:00:00.06," in r.stderr
+
+
+def test_measure_cli(tmp_path: Path) -> None:
+    """macro measure outputs JSON with text metrics, ink padding, per-char positions, and karaskel layout."""
+    # 1. Basic font + fontsize without layout
+    r = cli("macro", "measure", "AB", "--font", "Arial", "--fontsize", "48", "--bold", "--spacing", "1.5")
+    assert r.returncode == 0, r.stderr
+    data = json.loads(r.stdout)
+    assert data["text"] == "AB"
+    assert data["width"] > 0 and data["height"] > 0
+    assert data["padding_left"] + data["ink_width"] + data["padding_right"] == pytest.approx(data["width"])
+    assert data["padding_top"] + data["ink_height"] + data["padding_bottom"] == pytest.approx(data["height"])
+    assert "position" not in data
+    assert len(data["chars"]) == 2
+    assert data["chars"][0]["char"] == "A"
+    assert data["chars"][1]["char"] == "B"
+    assert "x" not in data["chars"][0]
+
+    # 2. With --an + --pos
+    r = cli("macro", "measure", "AB", "--font", "Arial", "--fontsize", "48", "--an", "5", "--pos", "640,360")
+    assert r.returncode == 0, r.stderr
+    data = json.loads(r.stdout)
+    assert data["align"] == 5
+    assert data["halign"] == "center" and data["valign"] == "middle"
+    assert data["x"] == 640.0 and data["y"] == 360.0
+    assert data["left"] == pytest.approx(640.0 - data["width"] / 2.0)
+    assert data["chars"][0]["sleft"] == pytest.approx(data["left"])
+    assert data["chars"][0]["x"] == pytest.approx(data["chars"][0]["scenter"])
+    assert data["chars"][0]["y"] == pytest.approx(360.0)
+
+    # 3. With --ass + --margins and output to file
+    src = write(tmp_path / "in.ass", MINIMAL_ASS)
+    out = tmp_path / "metrics.json"
+    r = cli(
+        "macro",
+        "measure",
+        "測試",
+        "--ass",
+        str(src),
+        "--style",
+        "Default",
+        "--an",
+        "2",
+        "--margins",
+        "15,25,35",
+        "-o",
+        str(out),
+    )
+    assert r.returncode == 0, r.stderr
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["eff_margin_l"] == 15 and data["eff_margin_r"] == 25 and data["eff_margin_v"] == 35
+    assert data["bottom"] == pytest.approx(720 - 35)
+
+
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is needed to make a test video")
 def test_real_video_probe_and_cache(tmp_path: Path, settings: Settings) -> None:
     video = tmp_path / "clip.mkv"

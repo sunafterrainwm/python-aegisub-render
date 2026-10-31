@@ -7,6 +7,9 @@ cdef extern from "windows.h" nogil:
     ctypedef void *HFONT
     ctypedef void *HGDIOBJ
     ctypedef long LONG
+    ctypedef short SHORT
+    ctypedef unsigned short WORD
+    ctypedef unsigned int UINT
     ctypedef unsigned char BYTE
     ctypedef int BOOL
     ctypedef unsigned long DWORD
@@ -14,6 +17,27 @@ cdef extern from "windows.h" nogil:
     ctypedef struct SIZE:
         LONG cx
         LONG cy
+
+    ctypedef struct POINT:
+        LONG x
+        LONG y
+
+    ctypedef struct GLYPHMETRICS:
+        UINT gmBlackBoxX
+        UINT gmBlackBoxY
+        POINT gmptGlyphOrigin
+        SHORT gmCellIncX
+        SHORT gmCellIncY
+
+    ctypedef struct FIXED:
+        WORD fract
+        SHORT value
+
+    ctypedef struct MAT2:
+        FIXED eM11
+        FIXED eM12
+        FIXED eM21
+        FIXED eM22
 
     ctypedef struct LOGFONTW:
         LONG lfHeight
@@ -49,6 +73,8 @@ cdef extern from "windows.h" nogil:
         FF_DONTCARE
         FR_PRIVATE
         LF_FACESIZE
+        GGO_METRICS
+        GGO_NATIVE
 
     HDC CreateCompatibleDC(HDC hdc)
     int SetMapMode(HDC hdc, int mode)
@@ -61,6 +87,15 @@ cdef extern from "windows.h" nogil:
     int GetTextFaceW(HDC hdc, int c, wchar_t *lpName)
     int AddFontResourceExW(const wchar_t *name, DWORD fl, void *res)
     DWORD GetFontData(HDC hdc, DWORD dwTable, DWORD dwOffset, void *pvBuffer, DWORD cjBuffer)
+    DWORD GetGlyphOutlineW(
+        HDC hdc,
+        UINT uChar,
+        UINT fuFormat,
+        GLYPHMETRICS *lpgm,
+        DWORD cjBuffer,
+        void *pvBuffer,
+        const MAT2 *lpmat2,
+    )
     DWORD GDI_ERROR
 
 

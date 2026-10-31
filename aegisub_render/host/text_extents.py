@@ -45,19 +45,23 @@ def register_private_fonts(dirs: list[Path]) -> int:
     return count
 
 
+def _scaled_height(style: AssStyle) -> int:
+    fontsize = style.fontsize * 64
+    try:
+        height = int(fontsize)  # (LONG)fontsize
+    except OverflowError, ValueError:
+        height = -(2**31)
+    return max(-(2**31), min(2**31 - 1, height))
+
+
 class TextExtents:
     def __init__(self) -> None:
         self._checked: set[str] = set()
         self.warnings: list[str] = []
 
     def measure(self, style: AssStyle, text: str) -> tuple[float, float, float, float] | None:
-        fontsize = style.fontsize * 64
+        height = _scaled_height(style)
         spacing = style.spacing * 64
-        try:
-            height = int(fontsize)  # (LONG)fontsize
-        except OverflowError, ValueError:
-            height = -(2**31)
-        height = max(-(2**31), min(2**31 - 1, height))
         face = to_wide(style.font)
         result = _gdi.measure(
             face,
@@ -79,6 +83,20 @@ class TextExtents:
             style.scaley / 100 * h / 64,
             style.scaley / 100 * descent / 64,
             style.scaley / 100 * extlead / 64,
+        )
+
+    def glyph_ink_boxes(
+        self, style: AssStyle, text: str
+    ) -> tuple[int, list[tuple[bool, int, int, int, int]]] | None:
+        return _gdi.glyph_ink_boxes(
+            to_wide(style.font),
+            _scaled_height(style),
+            style.bold,
+            style.italic,
+            style.underline,
+            style.strikeout,
+            style.encoding & 0xFF,
+            to_wide(text),
         )
 
     def _check_face(self, requested: str, actual: str, style: AssStyle) -> None:
