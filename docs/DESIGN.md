@@ -101,6 +101,6 @@ Aegisub 執行巨集或濾鏡時開的進度對話框，在這裡是 worker 行�
 
 ## 測試
 
-`scripts/gen_cases.py` 以固定 seed 產生案例。`tests/aegisub/` 是 Aegisub 以 `Karaoke template` 濾鏡匯出的結果（目前的檔案是 3.5.0 匯出的；3.5.1 寫出這些檔案的程式碼沒變，所以比對時 header 那行接受任何 3.5.x）：
+`scripts/gen_cases.py` 以固定 seed 產生案例。`tests/aegisub/` 是 Aegisub 3.5.1 以 `Karaoke template` 濾鏡匯出的結果（與 3.5.0 匯出的檔案只差 header 的版本號）：
 `--filter` 的輸出必須與它逐位元組相同（只差 header 那行），巨集的輸出去掉 Project Garbage 段落後也必須相同；
 snapshot 記錄巨集的完整輸出。
