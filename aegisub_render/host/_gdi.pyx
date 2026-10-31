@@ -15,14 +15,14 @@ cdef bytes _wide(str text):
 
 
 cdef HFONT _create_font(
-    bytes wface, LONG height, bint bold, bint italic, bint underline, bint strikeout, int charset
+    bytes wface, LONG height, int weight, bint italic, bint underline, bint strikeout, int charset
 ):
     """The LOGFONT CalculateTextExtents builds; `wface` is copied like wcsncpy(lf.lfFaceName, face, 31)."""
     cdef LOGFONTW lf
     cdef Py_ssize_t face_units = (PyBytes_GET_SIZE(wface) - 2) // 2
     memset(&lf, 0, sizeof(lf))
     lf.lfHeight = height
-    lf.lfWeight = FW_BOLD if bold else FW_NORMAL
+    lf.lfWeight = weight
     lf.lfItalic = italic
     lf.lfUnderline = underline
     lf.lfStrikeOut = strikeout
@@ -40,7 +40,7 @@ cdef HFONT _create_font(
 def measure(
     face: str,
     height: int,
-    bold: bool,
+    weight: int,
     italic: bool,
     underline: bool,
     strikeout: bool,
@@ -51,7 +51,8 @@ def measure(
     """Select the font described by the arguments (as CalculateTextExtents builds its LOGFONT)
     and measure `text`.
 
-    `face` is copied like wcsncpy(lf.lfFaceName, face, 31); `spacing` is in the same units as
+    `face` is copied like wcsncpy(lf.lfFaceName, face, 31) and `weight` becomes lfWeight
+    (CalculateTextExtents gives FW_BOLD or FW_NORMAL); `spacing` is in the same units as
     `height` (already multiplied by 64). Returns (width, height, descent, external leading,
     face actually selected by GDI), unscaled, or None if GDI failed.
     """
@@ -72,7 +73,7 @@ def measure(
         return None
     try:
         SetMapMode(dc, MM_TEXT)
-        font = _create_font(_wide(face), height, bold, italic, underline, strikeout, charset)
+        font = _create_font(_wide(face), height, weight, italic, underline, strikeout, charset)
         if font is NULL:
             return None
         old = SelectObject(dc, font)
@@ -101,7 +102,7 @@ def measure(
 def glyph_ink_boxes(
     face: str,
     height: int,
-    bold: bool,
+    weight: int,
     italic: bool,
     underline: bool,
     strikeout: bool,
@@ -134,7 +135,7 @@ def glyph_ink_boxes(
         return None
     try:
         SetMapMode(dc, MM_TEXT)
-        font = _create_font(_wide(face), height, bold, italic, underline, strikeout, charset)
+        font = _create_font(_wide(face), height, weight, italic, underline, strikeout, charset)
         if font is NULL:
             return None
         old = SelectObject(dc, font)
@@ -172,7 +173,7 @@ def glyph_ink_boxes(
         DeleteDC(dc)
 
 
-def name_table(face: str, bold: bool, italic: bool, charset: int) -> bytes | None:
+def name_table(face: str, weight: int, italic: bool, charset: int) -> bytes | None:
     """The OpenType 'name' table of the font GDI selects for these attributes, or None if it has
     none (bitmap fonts) or GDI failed."""
     cdef HDC dc
@@ -185,7 +186,7 @@ def name_table(face: str, bold: bool, italic: bool, charset: int) -> bytes | Non
     if dc is NULL:
         return None
     try:
-        font = _create_font(_wide(face), 0, bold, italic, False, False, charset)
+        font = _create_font(_wide(face), 0, weight, italic, False, False, charset)
         if font is NULL:
             return None
         old = SelectObject(dc, font)

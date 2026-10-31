@@ -3,7 +3,7 @@
 def measure(
     face: str,
     height: int,
-    bold: bool,
+    weight: int,
     italic: bool,
     underline: bool,
     strikeout: bool,
@@ -14,13 +14,14 @@ def measure(
     """Select the font described by the arguments (as CalculateTextExtents builds its LOGFONT)
     and measure `text`.
 
-    `face` is copied like wcsncpy(lf.lfFaceName, face, 31); `spacing` is in the same units as
+    `face` is copied like wcsncpy(lf.lfFaceName, face, 31) and `weight` becomes lfWeight
+    (CalculateTextExtents gives FW_BOLD or FW_NORMAL); `spacing` is in the same units as
     `height` (already multiplied by 64). Returns (width, height, descent, external leading,
     face actually selected by GDI), unscaled, or None if GDI failed.
     """
 
 def glyph_ink_boxes(
-    face: str, height: int, bold: bool, italic: bool, underline: bool, strikeout: bool, charset: int, text: str
+    face: str, height: int, weight: int, italic: bool, underline: bool, strikeout: bool, charset: int, text: str
 ) -> tuple[int, list[tuple[bool, int, int, int, int]]] | None:
     """Query GetTextMetricsW + GetGlyphOutlineW for each character in `text`.
 
@@ -28,7 +29,7 @@ def glyph_ink_boxes(
     or None if GDI failed.
     """
 
-def name_table(face: str, bold: bool, italic: bool, charset: int) -> bytes | None:
+def name_table(face: str, weight: int, italic: bool, charset: int) -> bytes | None:
     """The OpenType 'name' table of the font GDI selects for these attributes, or None if it has
     none (bitmap fonts) or GDI failed.
     """

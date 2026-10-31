@@ -64,8 +64,8 @@ cdef list _strings(FcPattern *pattern, const char *obj):
     return out
 
 
-cdef _Font _match(str face, bint bold, bint italic):
-    key = (face, bold, italic)
+cdef _Font _match(str face, int weight, bint italic):
+    key = (face, weight, italic)
     cached = _fonts.get(key)
     if cached is not None:
         return <_Font>cached
@@ -80,7 +80,7 @@ cdef _Font _match(str face, bint bold, bint italic):
     cdef hb_font_extents_t ext
     cdef _Font font = _Font()
     FcPatternAddString(pattern, FC_FAMILY, <const FcChar8 *>PyBytes_AS_STRING(family))
-    FcPatternAddInteger(pattern, FC_WEIGHT, FC_WEIGHT_BOLD if bold else FC_WEIGHT_REGULAR)
+    FcPatternAddInteger(pattern, FC_WEIGHT, FcWeightFromOpenType(weight))  # 400 -> REGULAR, 700 -> BOLD
     FcPatternAddInteger(pattern, FC_SLANT, FC_SLANT_ITALIC if italic else FC_SLANT_ROMAN)
     FcConfigSubstitute(_config, pattern, FcMatchPattern)
     FcDefaultSubstitute(pattern)
@@ -115,7 +115,7 @@ cdef _Font _match(str face, bint bold, bint italic):
 def measure(
     face: str,
     height: int,
-    bold: bool,
+    weight: int,
     italic: bool,
     underline: bool,
     strikeout: bool,
@@ -131,7 +131,7 @@ def measure(
     spacing is scaled by fontsize / (line height in pixels at 96 dpi), as Aegisub does. Returns
     (width, height, descent, external leading, family fontconfig chose), or None.
     """
-    cdef _Font font = _match(face, bold, italic)
+    cdef _Font font = _match(face, weight, italic)
     if font is None:
         return None
     cdef double size = height
@@ -155,7 +155,7 @@ def measure(
 def glyph_ink_boxes(
     face: str,
     height: int,
-    bold: bool,
+    weight: int,
     italic: bool,
     underline: bool,
     strikeout: bool,
@@ -167,7 +167,7 @@ def glyph_ink_boxes(
     Returns `(ascent, [(has_ink, origin_x, origin_y, blackbox_x, blackbox_y), ...])`, where the
     origin is the top left corner of the ink relative to the pen position (y up), or None.
     """
-    cdef _Font font = _match(face, bold, italic)
+    cdef _Font font = _match(face, weight, italic)
     if font is None:
         return None
     cdef double s = height / font.line_height()
@@ -189,9 +189,9 @@ def glyph_ink_boxes(
     return round(font.ascender * s), boxes
 
 
-def family_names(face: str, bold: bool, italic: bool) -> list[str] | None:
+def family_names(face: str, weight: int, italic: bool) -> list[str] | None:
     """Every family and full name, in every language, of the font fontconfig picks for `face`."""
-    cdef _Font font = _match(face, bold, italic)
+    cdef _Font font = _match(face, weight, italic)
     return None if font is None else list(font.names)
 
 

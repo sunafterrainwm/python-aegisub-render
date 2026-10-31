@@ -42,6 +42,20 @@ def font_names(table: bytes) -> set[str]:
     return names
 
 
+def font_weight(bold: bool | int) -> int:
+    """A font weight from a bold value, as libass reads \\b: 0 is normal (400), 1 (or -1, or True)
+    is bold (700), anything above 1 is the weight itself (\\b100 .. \\b900). There is no upper limit:
+    \\b9999 asks for more than the heaviest face has, and GDI then emboldens even a Black face
+    (fontconfig takes anything above 1000 as its heaviest weight). Aegisub's styles only hold a bool,
+    which gives what CalculateTextExtents asks for (FW_NORMAL / FW_BOLD)."""
+    value = int(bold)
+    if value in (1, -1):
+        return 700
+    if value <= 0:
+        return 400
+    return value
+
+
 def register_private_fonts(dirs: list[Path]) -> int:
     """Make the fonts in `dirs` available to this process only: AddFontResourceEx(FR_PRIVATE) for
     each font file on Windows, FcConfigAppFontAddDir elsewhere."""
@@ -83,14 +97,17 @@ class TextExtents:
         self._checked: set[str] = set()
         self.warnings: list[str] = []
 
-    def measure(self, style: AssStyle, text: str) -> tuple[float, float, float, float] | None:
+    def measure(
+        self, style: AssStyle, text: str, bold: bool | int | None = None
+    ) -> tuple[float, float, float, float] | None:
+        """`bold` overrides the style's (which is a bool) with a libass-style value (see font_weight)."""
         height = _scaled_height(style)
         spacing = style.spacing * 64
         face = to_wide(style.font)
         result = _backend.measure(
             face,
             height,
-            style.bold,
+            font_weight(style.bold if bold is None else bold),
             style.italic,
             style.underline,
             style.strikeout,
@@ -101,7 +118,7 @@ class TextExtents:
         if result is None:
             return None
         width, h, descent, extlead, actual_face = result
-        self._check_face(face, actual_face, style)
+        self._check_face(face, actual_face, style, font_weight(style.bold if bold is None else bold))
         return (
             style.scalex / 100 * width / 64,
             style.scaley / 100 * h / 64,
@@ -109,11 +126,13 @@ class TextExtents:
             style.scaley / 100 * extlead / 64,
         )
 
-    def glyph_ink_boxes(self, style: AssStyle, text: str) -> tuple[int, list[tuple[bool, int, int, int, int]]] | None:
+    def glyph_ink_boxes(
+        self, style: AssStyle, text: str, bold: bool | int | None = None
+    ) -> tuple[int, list[tuple[bool, int, int, int, int]]] | None:
         return _backend.glyph_ink_boxes(
             to_wide(style.font),
             _scaled_height(style),
-            style.bold,
+            font_weight(style.bold if bold is None else bold),
             style.italic,
             style.underline,
             style.strikeout,
@@ -121,14 +140,14 @@ class TextExtents:
             to_wide(text),
         )
 
-    def _check_face(self, requested: str, actual: str, style: AssStyle) -> None:
+    def _check_face(self, requested: str, actual: str, style: AssStyle, weight: int) -> None:
         requested = requested[:31]
         key = requested.lower()
         if key in self._checked or actual.lower() == key or requested.startswith("@"):
             return
         self._checked.add(key)
         # The family comes back in the user's language; the style may use any of the font's names.
-        if key in {name[:31].lower() for name in _face_names(requested, style)}:
+        if key in {name[:31].lower() for name in _face_names(requested, style, weight)}:
             return
         system = "Windows" if sys.platform == "win32" else "fontconfig"
         self.warnings.append(
@@ -137,13 +156,13 @@ class TextExtents:
         )
 
 
-def _face_names(requested: str, style: AssStyle) -> set[str]:
+def _face_names(requested: str, style: AssStyle, weight: int | None = None) -> set[str]:
     """Every name of the font the system picks for `requested`, in every language."""
     if sys.platform == "win32":
         from aegisub_render.host import _gdi
 
-        table = _gdi.name_table(requested, style.bold, style.italic, style.encoding & 0xFF)
+        table = _gdi.name_table(requested, weight or font_weight(style.bold), style.italic, style.encoding & 0xFF)
         return font_names(table) if table is not None else set()
     from aegisub_render.host import _fcft
 
-    return set(_fcft.family_names(requested, style.bold, style.italic) or [])
+    return set(_fcft.family_names(requested, weight or font_weight(style.bold), style.italic) or [])

@@ -1,11 +1,17 @@
 """The font substitution warning of aegisub.text_extents (GDI) and macro.measure."""
 
 import struct
+import sys
 
 import pytest
 
 from aegisub_render.ass.entries import AssStyle
-from aegisub_render.host.text_extents import TextExtents, _face_names, font_names  # pyright: ignore[reportPrivateUsage]
+from aegisub_render.host.text_extents import (  # pyright: ignore[reportPrivateUsage]
+    TextExtents,
+    _face_names,
+    font_names,
+    font_weight,
+)
 from aegisub_render.macro.measure import (
     MarginLayout,
     MeasureStyle,
@@ -62,6 +68,49 @@ def test_missing_font_warns_once() -> None:
     assert len(te.warnings) == 1
     assert te.warnings[0].startswith("aegisub-render: font 'NoSuchFont 4cd1' is not installed; ")
     assert " substituted " in te.warnings[0]
+
+
+@pytest.mark.parametrize(
+    ("bold", "weight"),
+    [
+        (False, 400),
+        (True, 700),
+        (0, 400),
+        (1, 700),
+        (-1, 700),
+        (300, 300),
+        (900, 900),
+        (1200, 1200),
+        (9999, 9999),
+        (10000, 10000),
+        (-5, 400),
+    ],
+)
+def test_font_weight_reads_bold_like_libass(bold: bool | int, weight: int) -> None:
+    """\\b0 / \\b1 are off / bold, larger values are the weight itself."""
+    assert font_weight(bold) == weight
+
+
+def test_measure_with_a_weight() -> None:
+    """MeasureStyle.bold takes libass values: 700 is what True gives, 400 what False gives."""
+    for bold, same_as in ((700, True), (400, False), (1, True), (0, False)):
+        a = measure_text(MeasureStyle(font="Arial", fontsize=48, bold=bold), "Weight")
+        b = measure_text(MeasureStyle(font="Arial", fontsize=48, bold=same_as), "Weight")
+        assert a.width == b.width, (bold, same_as)
+    thin = measure_text(MeasureStyle(font="Arial", fontsize=48, bold=400), "Weight")
+    heavy = measure_text(MeasureStyle(font="Arial", fontsize=48, bold=900), "Weight")
+    assert heavy.width >= thin.width
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="GDI emboldening; fontconfig stops at its heaviest weight")
+def test_weights_beyond_1000_are_not_capped() -> None:
+    """\\b9999 on a face that is already Black: GDI emboldens it further, so it measures wider."""
+    face = "Noto Sans CJK TC Black"
+    if face.lower() not in {n.lower() for n in _face_names(face, style(face))}:
+        pytest.skip(f"{face} is not installed")
+    black = measure_text(MeasureStyle(font=face, fontsize=48, bold=1000), "測試")
+    heavier = measure_text(MeasureStyle(font=face, fontsize=48, bold=9999), "測試")
+    assert heavier.width > black.width
 
 
 def test_measure_text_metrics_and_ink_padding() -> None:

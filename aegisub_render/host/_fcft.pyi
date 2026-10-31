@@ -3,7 +3,7 @@
 def measure(
     face: str,
     height: int,
-    bold: bool,
+    weight: int,
     italic: bool,
     underline: bool,
     strikeout: bool,
@@ -21,7 +21,7 @@ def measure(
     """
 
 def glyph_ink_boxes(
-    face: str, height: int, bold: bool, italic: bool, underline: bool, strikeout: bool, charset: int, text: str
+    face: str, height: int, weight: int, italic: bool, underline: bool, strikeout: bool, charset: int, text: str
 ) -> tuple[int, list[tuple[bool, int, int, int, int]]] | None:
     """The ink box of each character of `text`, in the units of measure(), like _gdi.glyph_ink_boxes.
 
@@ -29,7 +29,7 @@ def glyph_ink_boxes(
     origin is the top left corner of the ink relative to the pen position (y up), or None.
     """
 
-def family_names(face: str, bold: bool, italic: bool) -> list[str] | None:
+def family_names(face: str, weight: int, italic: bool) -> list[str] | None:
     """Every family and full name, in every language, of the font fontconfig picks for `face`."""
 
 def add_private_font(path: str) -> bool:

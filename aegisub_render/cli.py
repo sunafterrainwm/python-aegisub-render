@@ -217,9 +217,17 @@ def _measure_args(p: argparse.ArgumentParser) -> None:
     style_grp.add_argument("--style", default="Default", help="style name in --ass (default: Default)")
     style_grp.add_argument("--font", help="font family name (required unless --ass is given)")
     style_grp.add_argument("--fontsize", type=float, help="font size in points/pixels (required unless --ass is given)")
-    style_grp.add_argument(
-        "--bold", action=argparse.BooleanOptionalAction, default=None, help="bold weight (--bold / --no-bold)"
+    bold = style_grp.add_mutually_exclusive_group()
+    bold.add_argument(
+        "--bold",
+        type=int,
+        nargs="?",
+        const=1,
+        default=None,
+        metavar="N",
+        help="bold, read like libass reads \\bN: 1 (the default) is bold, 0 is normal, 100..900 is a weight",
     )
+    bold.add_argument("--no-bold", dest="bold", action="store_const", const=0, help="not bold (--bold 0)")
     style_grp.add_argument(
         "--italic", action=argparse.BooleanOptionalAction, default=None, help="italic style (--italic / --no-italic)"
     )

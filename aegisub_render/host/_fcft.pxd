@@ -20,12 +20,11 @@ cdef extern from "fontconfig/fontconfig.h" nogil:
     const char *FC_INDEX
     const char *FC_WEIGHT
     const char *FC_SLANT
-    int FC_WEIGHT_REGULAR
-    int FC_WEIGHT_BOLD
     int FC_SLANT_ROMAN
     int FC_SLANT_ITALIC
 
     FcConfig *FcInitLoadConfigAndFonts()
+    int FcWeightFromOpenType(int ot_weight)
     FcBool FcConfigAppFontAddDir(FcConfig *config, const FcChar8 *dir)
     FcBool FcConfigAppFontAddFile(FcConfig *config, const FcChar8 *file)
     FcPattern *FcPatternCreate()

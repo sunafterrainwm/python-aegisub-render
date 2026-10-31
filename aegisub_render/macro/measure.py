@@ -24,7 +24,7 @@ class MeasureStyle:
 
     font: str
     fontsize: float
-    bold: bool = False
+    bold: bool | int = False  # as libass reads \\b: 0/False, 1/True (700) or a weight (100 .. 900)
     italic: bool = False
     underline: bool = False
     strikeout: bool = False
@@ -56,7 +56,7 @@ class MeasureStyle:
         s = AssStyle()
         s.font = self.font
         s.fontsize = self.fontsize
-        s.bold = self.bold
+        s.bold = bool(self.bold)  # an AssStyle only holds a bool; measure_text passes the weight
         s.italic = self.italic
         s.underline = self.underline
         s.strikeout = self.strikeout
@@ -374,14 +374,15 @@ def measure_text(
         register_private_fonts(font_dirs)
 
     ass_style = style.to_ass_style() if isinstance(style, MeasureStyle) else style
+    bold = style.bold if isinstance(style, MeasureStyle) else None
     extents = TextExtents()
-    whole = extents.measure(ass_style, text)
+    whole = extents.measure(ass_style, text, bold)
     if whole is None:
         raise MeasureError("GDI failed to measure text")
     raw_w, height, descent, extlead = whole
     width = raw_w * video_x_correct_factor
 
-    glyph_info = extents.glyph_ink_boxes(ass_style, text)
+    glyph_info = extents.glyph_ink_boxes(ass_style, text, bold)
     if glyph_info is None:
         raise MeasureError("GDI failed to query glyph metrics")
     tm_ascent, boxes = glyph_info
@@ -398,7 +399,7 @@ def measure_text(
     ink_max_y: float | None = None
 
     for idx, (ch, (has_ink, orig_x, orig_y, bb_x, bb_y)) in enumerate(zip(char_list, boxes, strict=True)):
-        ch_ext = extents.measure(ass_style, ch)
+        ch_ext = extents.measure(ass_style, ch, bold)
         if ch_ext is None:
             raise MeasureError(f"GDI failed to measure character {ch!r}")
         ch_w = ch_ext[0] * video_x_correct_factor

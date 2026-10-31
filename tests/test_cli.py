@@ -317,6 +317,12 @@ def test_measure_cli(tmp_path: Path) -> None:
     r = cli("macro", "measure", "AB", "--font", "Arial", "--fontsize", "48", "--bold", "--spacing", "1.5")
     assert r.returncode == 0, r.stderr
     data = json.loads(r.stdout)
+    # --bold is \\b1; --bold 700 names the same weight, --no-bold is \\b0
+    same = cli("macro", "measure", "AB", "--font", "Arial", "--fontsize", "48", "--bold", "700", "--spacing", "1.5")
+    assert same.returncode == 0, same.stderr
+    assert json.loads(same.stdout)["width"] == data["width"]
+    plain = cli("macro", "measure", "AB", "--font", "Arial", "--fontsize", "48", "--no-bold", "--spacing", "1.5")
+    assert plain.returncode == 0, plain.stderr
     assert data["text"] == "AB"
     assert data["width"] > 0 and data["height"] > 0
     assert data["padding_left"] + data["ink_width"] + data["padding_right"] == pytest.approx(data["width"])

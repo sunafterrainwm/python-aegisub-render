@@ -147,6 +147,9 @@ Aegisub 執行巨集或濾鏡時開的進度對話框，在這裡是 worker 行�
   - 結果夾限在 `0 .. 9:59:59.99`。
 - **`macro measure`**：輸出 JSON。
   - 樣式來自參數（`--font`/`--fontsize`…）或 `--ass` 檔裡的樣式（`--style`，同時取得 PlayRes），各欄位可再覆寫；
+    粗體照 libass 讀 `\b` 的方式（`text_extents.font_weight`）：0 一般（400）、1 粗體（700）、大於 1 就是字重本身且
+    不設上限——`\b9999` 會要求比最粗的字面還粗，GDI 會在 Black 字面上再加粗（量起來更寬），fontconfig 則取最粗的字面。
+    `text_extents` 本身拿到的是 Aegisub 樣式的 bool（`!!next_int()`），所以只會是 400／700，結果與以前相同；
     `--video-size` 時照 karaskel 的公式加上水平修正係數。
   - 寬高與逐字位置用和 `text_extents` 相同的 GDI 量測（64 倍字號）；整行寬度以整行一次量測為準，逐字位置是逐字累加。
   - 筆畫留白用 `_gdi.glyph_ink_boxes`（`GetGlyphOutlineW` + `GGO_NATIVE`，點陣字型退回 `GGO_METRICS`）；
