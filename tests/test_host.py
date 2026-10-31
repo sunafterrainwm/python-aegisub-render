@@ -4,6 +4,7 @@ import json
 import textwrap
 from pathlib import Path
 
+from aegisub_render.host import _font
 from aegisub_render.runner import RenderOptions
 from aegisub_render.settings import Settings
 from aegisub_render.video.context import VideoOptions
@@ -330,10 +331,10 @@ def test_text_extents(run_lua: RunLua) -> None:
             check(w > 50 and w < 150 and h > 30 and h < 60, ("extents %g %g"):format(w, h))
             local w0, h0 = aegisub.text_extents(style, "")
             -- GDI measures nothing for empty text; a Pango layout (Aegisub elsewhere) is one line high
-            check(w0 == 0 and h0 == (jit.os == "Windows" and 0 or style.fontsize), "empty text")
+            check(w0 == 0 and h0 == (@GDI@ and 0 or style.fontsize), "empty text")
             style.scale_x = 200
             check(math.abs(aegisub.text_extents(style, "Hello") - 2 * w) < 1e-9, "scale_x")
-            """
+            """.replace("@GDI@", "true" if _font.backend() == "gdi" else "false")
         )
     )
     assert r.result.status == "ok", r.log

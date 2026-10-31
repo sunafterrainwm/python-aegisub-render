@@ -7,7 +7,7 @@
 `runner.output_data()` 決定寫法（巨集＝Save，濾鏡＝Export）→ 原子性寫檔／stdout／dry-run diff。
 
 內建巨集（`macro/`）不走 worker：`macro offset` 讀檔 → 平移 → 共用 `runner._write_output`；
-`macro measure` 直接用 `TextExtents`／`_gdi` 量測並輸出 JSON。
+`macro measure` 直接用 `TextExtents`／`_font` 量測並輸出 JSON。
 
 ## Lua host
 
@@ -35,9 +35,10 @@ PyAV 讀取，模仿 FFMS2 provider；結果快取在 `%TEMP%\aegisub-render\<sh
 
 ## 原生模組
 
-`_luajit`（LuaJIT＋lpeg＋luabins＋`native/src/shim.c`）、`_gdi`（Windows：text_extents、字型 name 表、
-`glyph_ink_boxes` 筆畫邊界）或 `_fcft`（其他平台：fontconfig 選字、HarfBuzz 量測，函式同 `_gdi`）、`_crt`（該平台的 C 函式庫）。
-`text_extents.py` 依平台選 `_gdi`／`_fcft`；WSL 的路徑翻譯在 `aegisub_render/wsl.py`。
+`_luajit`（LuaJIT＋lpeg＋luabins＋`native/src/shim.c`）、`_font`（同一個模組名，Windows 分支從 `_font.gdi.pyx`：GDI；
+Linux 分支從 `_font.fcft.pyx`：fontconfig 選字、HarfBuzz 量測；兩份介面與 docstring 相同，一份 `_font.pyi`，
+`_font.backend()` 說是哪一份）、`_crt`（該平台的 C 函式庫）。分支由 `meson.options` 的 `branch` 決定。
+WSL 的路徑翻譯在 `aegisub_render/wsl.py`。
 `native/sync_upstream.py`：從某個 Aegisub 樹（GitHub 或本地 git；aegisub-3.5 或 arch1t3cht-feature 兩種寫法）取出
 LuaJIT／lpeg／luabins／MoonScript，寫進 `native/upstream.json`（來源、sha256、LuaJIT 選項、預期的 `jit.version`）。
 `native/build.py`：依 `upstream.json` 驗證 sha256 → MSVC 環境 → meson（`-Dluajit:...`，lock 變了就重建 builddir）

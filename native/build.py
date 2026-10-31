@@ -37,7 +37,7 @@ SUFFIX = ".pyd" if WINDOWS else ".so"
 # extension module name -> package directory it is imported from
 MODULES: dict[str, Path] = {
     "_luajit": ROOT / "aegisub_render" / "lua",
-    "_gdi" if WINDOWS else "_fcft": ROOT / "aegisub_render" / "host",
+    "_font": ROOT / "aegisub_render" / "host",
     "_crt": ROOT / "aegisub_render",
 }
 

@@ -34,7 +34,7 @@ ASS 讀寫與 kara-templater 都與 3.5.0 逐位元組相同，所以原生模�
 - 沒有可信來源提供符合需求（commit、`lua52compat`、GC64、lpeg 0.10）的預建 DLL，因此自行建置；
   建置腳本照抄 Aegisub 的 meson 設定，建置產物與腳本都 commit（根目錄 `meson.build`、`native/`、套件內的 `.pyd`）。
 - 綁定用 Cython（`.pyx` 實作、`.pxd` C 宣告、`.pyi` 型別）：`_luajit` 擴充模組靜態連結 LuaJIT + lpeg 0.10 + luabins + shim
-  （與 Aegisub 把它們連進 exe 的方式相同）；`_gdi` 做 `text_extents` 的 GDI 量測；`_crt` 用 MSVC UCRT 本身計算
+  （與 Aegisub 把它們連進 exe 的方式相同）；`_font` 做 `text_extents` 的量測（見「非 Windows」）；`_crt` 用 MSVC UCRT 本身計算
   Aegisub 依賴的 C 行為（`atoi`、`strtol`、`%g`/`%f`、C 轉型），取代原本的 Python 模擬。
 - Lua 執行環境的來源可以換：`native/sync_upstream.py` 從 GitHub（逐檔讀取，不 clone）或本地 git 的指定
   tag／commit／分支（或 `9706-cibuilds-20caaabc0` 這類版本字串，取最後一段為 commit）取出 `luajit.wrap`、
@@ -69,7 +69,7 @@ ASS 讀寫與 kara-templater 都與 3.5.0 逐位元組相同，所以原生模�
   layout，字級 `(int)(fontsize*64)` pt），再把結果乘以 `fontsize / 行高`。所以 `height` 恆等於字級，寬度、descent
   依同一比例，external leading 是 0（wxGCDC 一律給 0）；有 spacing 時逐字量測，spacing 也乘上該比例
   （`fontsize / 以 96 dpi 換算的行高像素`）。空字串沒有 spacing 時仍有一行的高度（Pango 的空 layout），不像 GDI 是 0。
-- 字型選擇與量測（`host/_fcft.pyx`）像 libass：fontconfig（family、weight、slant → `FcConfigSubstitute` +
+- 字型選擇與量測（`host/_font.fcft.pyx`）像 libass：fontconfig（family、weight、slant → `FcConfigSubstitute` +
   `FcDefaultSubstitute` + `FcFontMatch`），量測用 HarfBuzz 的 OpenType 函式（shaping 後的 advance、
   `hb_font_get_h_extents` 的行高，與 Pango 相同），不需要 FreeType。字型替換警告比對 fontconfig 給出的所有語言的
   family／fullname；`glyph_ink_boxes` 用 `hb_font_get_glyph_extents`。私人字型用 `FcConfigAppFontAddDir`。
@@ -80,7 +80,12 @@ ASS 讀寫與 kara-templater 都與 3.5.0 逐位元組相同，所以原生模�
   `X:\...` 換成 `/mnt/x/...`；`?user`／`?local` 取自 Windows 的 `%APPDATA%`／`%LOCALAPPDATA%`（`cmd.exe`）。
   連結檔若是 Windows 磁碟機路徑，只在檢查檔案是否存在時翻譯，寫回時保持原樣。
 - `.so` 不 commit（依各系統的 fontconfig／HarfBuzz 版本），builddir 是 `native/builddir-<platform>`；
-  `.pyi`（含 `_fcft.pyi`）兩邊產生的內容相同，照常 commit。
+  `.pyi` 兩邊產生的內容相同，照常 commit。
+- 量測模組只有一個名稱 `aegisub_render.host._font`，依平台分支編譯 `_font.gdi.pyx` 或 `_font.fcft.pyx`
+  （Cython `--module-name`；C 宣告放在同名 `.pxi` 以 `include` 引入）。兩份原始碼的公開函式、簽名與 docstring
+  逐字相同，所以只有一份 `_font.pyi`，兩個平台的 `tests/test_stubs.py` 都檢查它；`_font.backend()` 回報
+  `"gdi"` 或 `"fcft"`，測試以它（而不是 `sys.platform`）判斷 GDI 才有的行為。共用的純 Python 部分
+  （字型檔副檔名、`name` 表解析）在 `host/fontnames.py`。分支由 `meson.options` 的 `branch` 決定（預設跟著主機）。
 - 測試：參考檔與 snapshot 都是 Windows 的輸出。非 Windows 時要求逐行相同、只有數字可以不同，且每個數字在 5% 或 ±1
   以內（實測最大 4.2%）；snapshot 只在 Windows 重新記錄。
 
@@ -152,7 +157,7 @@ Aegisub 執行巨集或濾鏡時開的進度對話框，在這裡是 worker 行�
     `text_extents` 本身拿到的是 Aegisub 樣式的 bool（`!!next_int()`），所以只會是 400／700，結果與以前相同；
     `--video-size` 時照 karaskel 的公式加上水平修正係數。
   - 寬高與逐字位置用和 `text_extents` 相同的 GDI 量測（64 倍字號）；整行寬度以整行一次量測為準，逐字位置是逐字累加。
-  - 筆畫留白用 `_gdi.glyph_ink_boxes`（`GetGlyphOutlineW` + `GGO_NATIVE`，點陣字型退回 `GGO_METRICS`）；
+  - 筆畫留白用 `_font.glyph_ink_boxes`（Windows 分支：`GetGlyphOutlineW` + `GGO_NATIVE`，點陣字型退回 `GGO_METRICS`）；
     空白字元沒有筆畫；筆畫超出字元格時留白忠實地是負值（左＋筆畫＋右恆等於寬）。
   - 位置照 `karaskel.preproc_line_pos`：`--an` + `--margins`（含有效邊距）或 `--an` + `--pos`；有版面時逐字附上
     `sleft`/`scenter`/… 等畫面座標。

@@ -1,4 +1,4 @@
-# C declarations for _fcft.pyx: the parts of fontconfig and HarfBuzz it uses.
+# C declarations for _font.fcft.pyx (the parts of fontconfig and HarfBuzz it uses), included by it.
 
 from libc.stdint cimport int32_t, uint32_t
 

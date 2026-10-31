@@ -1,0 +1,4 @@
+option('branch', type: 'combo', choices: ['auto', 'windows', 'linux'], value: 'auto',
+       description: 'Which platform branch to build: auto follows the host; linux forces the non-Windows ' +
+                    'branch (_font from _font.fcft.pyx with fontconfig + HarfBuzz, -fexceptions), e.g. ' +
+                    'with an MSYS2 toolchain on Windows (native/build.py --msys2)')

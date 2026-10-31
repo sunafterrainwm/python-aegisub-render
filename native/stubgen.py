@@ -30,12 +30,8 @@ from pathlib import Path
 from types import ModuleType
 
 ROOT = Path(__file__).resolve().parent.parent
-# the modules built on this platform (the text measurement one is _gdi on Windows, _fcft elsewhere)
-MODULES = (
-    "aegisub_render._crt",
-    "aegisub_render.host._gdi" if sys.platform == "win32" else "aegisub_render.host._fcft",
-    "aegisub_render.lua._luajit",
-)
+# _font is built from _font.gdi.pyx or _font.fcft.pyx; both give the same stub
+MODULES = ("aegisub_render._crt", "aegisub_render.host._font", "aegisub_render.lua._luajit")
 
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _SKIP = {"self", "None", "True", "False", "object"}

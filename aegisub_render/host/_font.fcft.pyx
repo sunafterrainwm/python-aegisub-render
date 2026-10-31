@@ -1,15 +1,22 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, embedsignature=True, embedsignature.format=python, binding=True
-"""Text measurement outside Windows: the non-WIN32 branch of Automation4::CalculateTextExtents
-(src/auto4_base.cpp).
+"""aegisub_render.host._font as built outside Windows (or forced with the meson option
+font_backend=fcft): the non-WIN32 branch of Automation4::CalculateTextExtents (src/auto4_base.cpp).
 
 Aegisub measures there with wxMemoryDC::GetTextExtent, a Pango layout on GTK, and then scales
 everything by fontsize / line height. Here the font is chosen the way libass chooses it
 (fontconfig: family, weight, slant, FcConfigSubstitute + FcDefaultSubstitute + FcFontMatch) and
 measured with HarfBuzz (shaped advances, hb_font_get_h_extents for the line height, as Pango does
-since it moved to HarfBuzz). The functions mirror those of _gdi so text_extents.py can use either.
+since it moved to HarfBuzz). _font.gdi.pyx is the other build of the same module; both have the
+same functions, signatures and docstrings, so one _font.pyi describes either.
 """
 
+from pathlib import Path
+
 from cpython.bytes cimport PyBytes_AS_STRING
+
+from aegisub_render.host.fontnames import font_files
+
+include "_font.fcft.pxi"
 
 # Pango lays text out at 96 dpi: a font of N points is N * 96 / 72 pixels.
 cdef double PANGO_DPI = 96.0
@@ -123,13 +130,15 @@ def measure(
     text: str,
     spacing: float,
 ) -> tuple[float, float, float, float, str] | None:
-    """Measure `text` the way Aegisub does without GDI, with the arguments of _gdi.measure.
+    """Select the font for these attributes and measure `text` as Automation4::CalculateTextExtents
+    does on this platform.
 
-    `height` is the font size times 64. Like wxGTK, underline, strike-out and the charset do not
-    change the result. The line height is scaled to `height`, the width and descent with it,
-    and the external leading is 0. With spacing, each character is measured on its own and the
-    spacing is scaled by fontsize / (line height in pixels at 96 dpi), as Aegisub does. Returns
-    (width, height, descent, external leading, family fontconfig chose), or None.
+    Windows: GDI, with the LOGFONT it builds (lfHeight = `height`, lfWeight = `weight`, the face
+    copied like wcsncpy(lfFaceName, face, 31)). Elsewhere: wxWidgets' Pango, reproduced with
+    fontconfig and HarfBuzz (the line height scaled to `height`, external leading 0; underline,
+    strike-out and the charset change nothing). `height` and `spacing` are the font size and
+    spacing times 64. Returns (width, height, descent, external leading, face actually used),
+    unscaled, or None.
     """
     cdef _Font font = _match(face, weight, italic)
     if font is None:
@@ -162,10 +171,12 @@ def glyph_ink_boxes(
     charset: int,
     text: str,
 ) -> tuple[int, list[tuple[bool, int, int, int, int]]] | None:
-    """The ink box of each character of `text`, in the units of measure(), like _gdi.glyph_ink_boxes.
+    """The ink box of each character of `text` in the font measure() uses (GetGlyphOutlineW on
+    Windows, HarfBuzz glyph extents elsewhere).
 
-    Returns `(ascent, [(has_ink, origin_x, origin_y, blackbox_x, blackbox_y), ...])`, where the
-    origin is the top left corner of the ink relative to the pen position (y up), or None.
+    Returns `(ascent, [(has_ink, origin_x, origin_y, blackbox_x, blackbox_y), ...])` in the units
+    of measure(), the origin being the top left corner of the ink relative to the pen position
+    (y up), or None.
     """
     cdef _Font font = _match(face, weight, italic)
     if font is None:
@@ -189,21 +200,33 @@ def glyph_ink_boxes(
     return round(font.ascender * s), boxes
 
 
-def family_names(face: str, weight: int, italic: bool) -> list[str] | None:
-    """Every family and full name, in every language, of the font fontconfig picks for `face`."""
+def face_names(face: str, weight: int, italic: bool, charset: int) -> list[str]:
+    """Every family and full name, in every language it has them in, of the font the system picks
+    for `face` (its 'name' table on Windows, fontconfig elsewhere); empty if there are none."""
     cdef _Font font = _match(face, weight, italic)
-    return None if font is None else list(font.names)
+    return [] if font is None else sorted(set(font.names))
 
 
 def add_private_font(path: str) -> bool:
-    """FcConfigAppFontAddFile: make a font file available to this process only."""
+    """Make a font file available to this process only (AddFontResourceEx with FR_PRIVATE on
+    Windows, FcConfigAppFontAddFile elsewhere)."""
     cdef bytes p = path.encode("utf-8", "surrogateescape")
     _fonts.clear()
     return FcConfigAppFontAddFile(_config, <const FcChar8 *>PyBytes_AS_STRING(p)) != 0
 
 
-def add_private_font_dir(path: str) -> bool:
-    """FcConfigAppFontAddDir: make the fonts in a directory (recursively) available to this process only."""
+def add_private_font_dir(path: str) -> int:
+    """Make the font files in a directory and its subdirectories available to this process only
+    (each with add_private_font on Windows, FcConfigAppFontAddDir elsewhere); returns how many."""
     cdef bytes p = path.encode("utf-8", "surrogateescape")
+    cdef list files = font_files(Path(path))
     _fonts.clear()
-    return FcConfigAppFontAddDir(_config, <const FcChar8 *>PyBytes_AS_STRING(p)) != 0
+    if not files or FcConfigAppFontAddDir(_config, <const FcChar8 *>PyBytes_AS_STRING(p)) == 0:
+        return 0
+    return len(files)
+
+
+def backend() -> str:
+    """Which build of this module is loaded: "gdi" (GDI, the Windows build) or "fcft" (fontconfig and
+    HarfBuzz, the build used elsewhere, which Windows can also be built with)."""
+    return "fcft"

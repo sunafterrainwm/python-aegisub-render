@@ -231,7 +231,7 @@ uv run ruff check
 | 模組 | 內容 |
 |---|---|
 | `aegisub_render/lua/_luajit`（`.pyx` / `.pxd` / `.pyi`） | 靜態連結的 LuaJIT + lpeg + luabins + shim，以及 Python 綁定：`LuaState`、把 Python 函式變成 Lua C 函式的 dispatcher、`aegisub.re/unicode/lfs` 背後的 C 函式表 |
-| `aegisub_render/host/_gdi`（`.pyx` / `.pxd` / `.pyi`） | `text_extents` 用的 GDI 量測；讀取選中字型的 `name` 表，用來判斷字型是否被替換（`GetTextFace` 只給使用者語言的名稱，樣式用英文名稱時不算替換） |
+| `aegisub_render/host/_font`（`_font.gdi.pyx` / `_font.fcft.pyx`，`.pxi`，一份 `_font.pyi`） | `text_extents` 的量測，同一個模組名稱、依平台分支從兩份原始碼之一編譯：Windows 分支用 GDI（以選中字型的 `name` 表判斷是否被替換，因為 `GetTextFace` 只給使用者語言的名稱），Linux 分支用 fontconfig + HarfBuzz。兩份的函式、簽名與 docstring 相同，`_font.backend()` 回報是哪一份 |
 | `aegisub_render/_crt`（`.pyx` / `.pyi`） | Aegisub 依賴的 C 行為：`atoi`、`strtol`、`printf("%g"/"%f")`、double→整數的 C 轉型、int64 除法。直接用 MSVC UCRT 計算，而不是用 Python 模擬（例如 `atoi` 溢位時夾到 `INT_MAX`、`strtol` 接受 `0x`、`inf`/`nan` 的寫法） |
 
 `.pxd` 是 C 宣告（LuaJIT API、shim、windows.h）。`.pyi` 是編譯時產生的：Cython 本身不會產生 stub，

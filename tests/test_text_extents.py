@@ -1,11 +1,11 @@
 """The font substitution warning of aegisub.text_extents (GDI) and macro.measure."""
 
 import struct
-import sys
 
 import pytest
 
 from aegisub_render.ass.entries import AssStyle
+from aegisub_render.host import _font
 from aegisub_render.host.text_extents import (  # pyright: ignore[reportPrivateUsage]
     TextExtents,
     _face_names,
@@ -102,7 +102,7 @@ def test_measure_with_a_weight() -> None:
     assert heavy.width >= thin.width
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="GDI emboldening; fontconfig stops at its heaviest weight")
+@pytest.mark.skipif(_font.backend() != "gdi", reason="GDI emboldening; fontconfig stops at its heaviest weight")
 def test_weights_beyond_1000_are_not_capped() -> None:
     """\\b9999 on a face that is already Black: GDI emboldens it further, so it measures wider."""
     face = "Noto Sans CJK TC Black"

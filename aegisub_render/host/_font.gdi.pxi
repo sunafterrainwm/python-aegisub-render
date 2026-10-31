@@ -1,4 +1,4 @@
-# C declarations for _gdi.pyx (the subset of windows.h / wingdi.h it uses).
+# C declarations for _font.gdi.pyx (the subset of windows.h / wingdi.h it uses), included by it.
 
 from libc.stddef cimport wchar_t
 

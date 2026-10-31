@@ -1,45 +1,15 @@
 """aegisub.text_extents: Automation4::CalculateTextExtents (src/auto4_base.cpp).
 
-On Windows, its WIN32 branch through GDI (_gdi); elsewhere, its wxWidgets branch with the font
-chosen by fontconfig and measured by HarfBuzz (_fcft). Both modules have the same functions.
+The measuring is done by aegisub_render.host._font, built from _font.gdi.pyx on Windows (GDI, its
+WIN32 branch) and from _font.fcft.pyx elsewhere (its wxWidgets branch, with fontconfig and HarfBuzz).
 """
 
-import struct
-import sys
 from pathlib import Path
 
 from aegisub_render.ass.entries import AssStyle
+from aegisub_render.host import _font
+from aegisub_render.host.fontnames import font_names
 from aegisub_render.textenc import to_wide
-
-if sys.platform == "win32":
-    from aegisub_render.host import _gdi as _backend
-else:
-    from aegisub_render.host import _fcft as _backend
-
-FONT_SUFFIXES = (".ttf", ".otf", ".ttc", ".otc", ".fon", ".fnt")
-# Family, full name, typographic family: the names a LOGFONT face name can select a font by.
-FACE_NAME_IDS = (1, 4, 16)
-
-
-def font_names(table: bytes) -> set[str]:
-    """The FACE_NAME_IDS names in an OpenType 'name' table, in every language it has them in."""
-    names: set[str] = set()
-    if len(table) < 6:
-        return names
-    _, count, storage = struct.unpack_from(">3H", table, 0)
-    for i in range(count):
-        record = 6 + 12 * i
-        if record + 12 > len(table):
-            break
-        platform, encoding, _, name_id, length, offset = struct.unpack_from(">6H", table, record)
-        if name_id not in FACE_NAME_IDS:
-            continue
-        raw = table[storage + offset : storage + offset + length]
-        if platform in (0, 3):  # Unicode, Windows: UTF-16BE
-            names.add(raw.decode("utf-16-be", "replace"))
-        elif platform == 1 and encoding == 0:  # Macintosh Roman
-            names.add(raw.decode("mac_roman", "replace"))
-    return names
 
 
 def font_weight(bold: bool | int) -> int:
@@ -57,30 +27,8 @@ def font_weight(bold: bool | int) -> int:
 
 
 def register_private_fonts(dirs: list[Path]) -> int:
-    """Make the fonts in `dirs` available to this process only: AddFontResourceEx(FR_PRIVATE) for
-    each font file on Windows, FcConfigAppFontAddDir elsewhere."""
-    count = 0
-    for d in dirs:
-        if not d.is_dir():
-            continue
-        fonts = [f for f in sorted(d.rglob("*")) if f.suffix.lower() in FONT_SUFFIXES]
-        if sys.platform == "win32":
-            count += sum(1 for f in fonts if _gdi_add_private_font(str(f)))
-        elif fonts and _fcft_add_private_font_dir(str(d)):
-            count += len(fonts)
-    return count
-
-
-def _gdi_add_private_font(path: str) -> bool:
-    from aegisub_render.host import _gdi
-
-    return _gdi.add_private_font(path)
-
-
-def _fcft_add_private_font_dir(path: str) -> bool:
-    from aegisub_render.host import _fcft
-
-    return _fcft.add_private_font_dir(path)
+    """Make the fonts in `dirs` (and their subdirectories) available to this process only."""
+    return sum(_font.add_private_font_dir(str(d)) for d in dirs if d.is_dir())
 
 
 def _scaled_height(style: AssStyle) -> int:
@@ -104,7 +52,7 @@ class TextExtents:
         height = _scaled_height(style)
         spacing = style.spacing * 64
         face = to_wide(style.font)
-        result = _backend.measure(
+        result = _font.measure(
             face,
             height,
             font_weight(style.bold if bold is None else bold),
@@ -129,7 +77,7 @@ class TextExtents:
     def glyph_ink_boxes(
         self, style: AssStyle, text: str, bold: bool | int | None = None
     ) -> tuple[int, list[tuple[bool, int, int, int, int]]] | None:
-        return _backend.glyph_ink_boxes(
+        return _font.glyph_ink_boxes(
             to_wide(style.font),
             _scaled_height(style),
             font_weight(style.bold if bold is None else bold),
@@ -149,7 +97,7 @@ class TextExtents:
         # The family comes back in the user's language; the style may use any of the font's names.
         if key in {name[:31].lower() for name in _face_names(requested, style, weight)}:
             return
-        system = "Windows" if sys.platform == "win32" else "fontconfig"
+        system = "Windows" if _font.backend() == "gdi" else "fontconfig"
         self.warnings.append(
             f"aegisub-render: font '{requested}' is not installed; {system} substituted '{actual}' "
             "for aegisub.text_extents (Aegisub would do the same)\n"
@@ -158,11 +106,8 @@ class TextExtents:
 
 def _face_names(requested: str, style: AssStyle, weight: int | None = None) -> set[str]:
     """Every name of the font the system picks for `requested`, in every language."""
-    if sys.platform == "win32":
-        from aegisub_render.host import _gdi
+    w = weight or font_weight(style.bold)
+    return set(_font.face_names(requested, w, style.italic, style.encoding & 0xFF))
 
-        table = _gdi.name_table(requested, weight or font_weight(style.bold), style.italic, style.encoding & 0xFF)
-        return font_names(table) if table is not None else set()
-    from aegisub_render.host import _fcft
 
-    return set(_fcft.family_names(requested, weight or font_weight(style.bold), style.italic) or [])
+__all__ = ["TextExtents", "font_names", "font_weight", "register_private_fonts"]
