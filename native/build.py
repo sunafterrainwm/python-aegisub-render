@@ -4,11 +4,12 @@ regenerate their .pyi stubs (native/stubgen.py).
 Usage (from the repository root):
 
     uv run --group build python native/build.py
-    uv run --group build python native/build.py --msys2 F:\\msys64\\ucrt64   # Windows: the Linux branch
+    uv run --group build python native/build.py --msys2 C:\\msys64\\ucrt64   # Windows: the Linux branch
 
 --msys2 builds the Linux branch (meson option branch=linux: _font from _font.fcft.pyx, with
-fontconfig and HarfBuzz) on Windows with the gcc, pkg-config, fontconfig and HarfBuzz of an MSYS2
-environment (its prefix, or the MSYS2 root for its ucrt64), still for this Python. Its build
+fontconfig and HarfBuzz) on Windows with the C compiler, pkg-config, fontconfig and HarfBuzz of an
+MSYS2 environment (ucrt64, mingw64, clang64 or clangarm64: its prefix, or the MSYS2 root for its
+ucrt64), still for this Python; a missing package is reported with that environment's package name. Its build
 directory is native/builddir-msys2-<environment>. The modules it copies into the package replace
 the committed MSVC ones (a plain build, or git checkout, puts those back), and need the
 environment's DLLs: their directory is written to aegisub_render/_dll_dirs.txt (not committed),
@@ -36,6 +37,7 @@ import os
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -142,25 +144,60 @@ def meson_command() -> list[str]:
     return [sys.executable, "-m", "mesonbuild.mesonmain"]
 
 
-def msys2_prefix(path: Path) -> Path:
-    """An MSYS2 environment prefix (the directory with bin/gcc.exe), or the MSYS2 root for its ucrt64."""
-    for prefix in (path, path / "ucrt64"):
-        if (prefix / "bin" / "gcc.exe").is_file():
-            return prefix.resolve()
-    raise SystemExit(f"{path}: no bin/gcc.exe (install mingw-w64-ucrt-x86_64-gcc, -fontconfig and -harfbuzz there)")
+# MSYS2 environments whose packages can build the Linux branch: package prefix, C compiler
+MSYS2_ENVIRONMENTS: dict[str, tuple[str, str]] = {
+    "ucrt64": ("mingw-w64-ucrt-x86_64", "gcc"),
+    "mingw64": ("mingw-w64-x86_64", "gcc"),
+    "clang64": ("mingw-w64-clang-x86_64", "clang"),
+    "clangarm64": ("mingw-w64-clang-aarch64", "clang"),
+}
+MSYS2_DEFAULT = "ucrt64"
 
 
-def msys2_environment(prefix: Path) -> dict[str, str]:
-    """This environment with the MSYS2 toolchain first: gcc as the C compiler, its pkg-config."""
+@dataclass(slots=True)
+class Msys2:
+    prefix: Path  # e.g. C:\msys64\ucrt64
+    name: str  # e.g. ucrt64
+    compiler: Path
+    pkg_config: Path
+
+
+def msys2_toolchain(path: Path) -> Msys2:
+    """The MSYS2 environment `path` names (its prefix, or the MSYS2 root for ucrt64), with every
+    package the Linux branch needs; otherwise exit naming the environment and what to install."""
+    path = path.resolve()
+    if path.name.lower() in MSYS2_ENVIRONMENTS:
+        prefix, what = path, f"{path} ({path.name.lower()} environment)"
+    elif (path / "usr" / "bin").is_dir() or (path / "msys2.exe").is_file():
+        prefix, what = path / MSYS2_DEFAULT, f"{path} ({MSYS2_DEFAULT} environment, the default for an MSYS2 root)"
+    else:
+        known = ", ".join(MSYS2_ENVIRONMENTS)
+        raise SystemExit(f"{path}: not an MSYS2 root or environment ({known})")
+    name = prefix.name.lower()
+    package, compiler = MSYS2_ENVIRONMENTS[name]
+    bin_dir, pc_dir = prefix / "bin", prefix / "lib" / "pkgconfig"
+    pkg_config = next((bin_dir / n for n in ("pkg-config.exe", "pkgconf.exe") if (bin_dir / n).is_file()), None)
+    needs = {
+        f"{package}-{compiler}": (bin_dir / f"{compiler}.exe").is_file(),
+        f"{package}-pkgconf": pkg_config is not None,
+        f"{package}-fontconfig": (pc_dir / "fontconfig.pc").is_file(),
+        f"{package}-harfbuzz": (pc_dir / "harfbuzz.pc").is_file(),
+    }
+    missing = [pkg for pkg, present in needs.items() if not present]
+    if missing:
+        raise SystemExit(
+            f"{what} lacks {', '.join(missing)}\ninstall them from an MSYS2 shell: pacman -S {' '.join(missing)}"
+        )
+    assert pkg_config is not None
+    return Msys2(prefix=prefix, name=name, compiler=bin_dir / f"{compiler}.exe", pkg_config=pkg_config)
+
+
+def msys2_environment(toolchain: Msys2) -> dict[str, str]:
+    """This environment with the MSYS2 toolchain first: its C compiler and pkg-config."""
     env = dict(os.environ)
-    env["PATH"] = str(prefix / "bin") + os.pathsep + env.get("PATH", "")
-    env["CC"] = str(prefix / "bin" / "gcc.exe")
-    pkg_config = next(
-        (prefix / "bin" / n for n in ("pkg-config.exe", "pkgconf.exe") if (prefix / "bin" / n).is_file()), None
-    )
-    if pkg_config is None:
-        raise SystemExit(f"{prefix}: no pkg-config (install mingw-w64-ucrt-x86_64-pkgconf)")
-    env["PKG_CONFIG"] = str(pkg_config)
+    env["PATH"] = str(toolchain.prefix / "bin") + os.pathsep + env.get("PATH", "")
+    env["CC"] = str(toolchain.compiler)
+    env["PKG_CONFIG"] = str(toolchain.pkg_config)
     return env
 
 
@@ -170,7 +207,8 @@ def main(argv: list[str] | None = None) -> None:
         "--msys2",
         type=Path,
         metavar="ENV",
-        help="Windows only: build the Linux branch with an MSYS2 environment, e.g. F:\\msys64\\ucrt64",
+        help="Windows only: build the Linux branch with an MSYS2 environment, e.g. C:\\msys64\\ucrt64 "
+        "(an MSYS2 root means its ucrt64)",
     )
     args = parser.parse_args(argv)
     lock = load_lock()
@@ -179,9 +217,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.msys2 is not None:
         if not WINDOWS:
             raise SystemExit("--msys2 is for Windows; elsewhere the Linux branch is the default")
-        prefix = msys2_prefix(args.msys2)
-        env = msys2_environment(prefix)
-        build_dir = NATIVE / f"builddir-msys2-{prefix.name}"
+        toolchain = msys2_toolchain(args.msys2)
+        prefix = toolchain.prefix
+        env = msys2_environment(toolchain)
+        build_dir = NATIVE / f"builddir-msys2-{toolchain.name}"
         options.append("-Dbranch=linux")
     else:
         prefix = None

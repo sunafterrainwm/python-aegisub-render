@@ -207,8 +207,8 @@ uv run pytest
 ### 在 Windows 上編譯 Linux 分支（MSYS2）
 
 ```powershell
-# 需要 MSYS2 的 mingw-w64-ucrt-x86_64-gcc、-pkgconf、-fontconfig、-harfbuzz
-uv run --group build python native/build.py --msys2 F:\msys64\ucrt64   # 或 MSYS2 根目錄（取其 ucrt64）
+# 需要該 MSYS2 環境的編譯器、pkgconf、fontconfig、harfbuzz（ucrt64 是 mingw-w64-ucrt-x86_64-gcc 等；缺的會列出套件名）
+uv run --group build python native/build.py --msys2 C:\msys64\ucrt64   # 或 MSYS2 根目錄（取其 ucrt64）
 uv run pytest
 uv run --group build python native/build.py                            # 換回 MSVC 編的模組
 ```
