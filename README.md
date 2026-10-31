@@ -204,6 +204,22 @@ uv run pytest
 量測方式不同，所以用到字寬／位置的模板在 Linux 的輸出數值會和 Windows 略有差異（12 個測試案例中 6 個逐位元組
 相同，其餘 6 個只差數字，最多約 4%）；`tests/test_cases.py` 在非 Windows 上以此容許範圍比對。
 
+### 在 Windows 上編譯 Linux 分支（MSYS2）
+
+```powershell
+# 需要 MSYS2 的 mingw-w64-ucrt-x86_64-gcc、-pkgconf、-fontconfig、-harfbuzz
+uv run --group build python native/build.py --msys2 F:\msys64\ucrt64   # 或 MSYS2 根目錄（取其 ucrt64）
+uv run pytest
+uv run --group build python native/build.py                            # 換回 MSVC 編的模組
+```
+
+`--msys2` 以該環境的 gcc、pkg-config、fontconfig 與 HarfBuzz 編譯 Linux 分支（meson 選項 `branch=linux`：`_font`
+由 `_font.fcft.pyx` 編出），模組仍是給本專案的 Python 用，builddir 是 `native/builddir-msys2-<環境>`。編出的 `.pyd`
+與 commit 的 MSVC 版同名，會取代它們（一般建置或 `git checkout` 即可換回）；它們要載入該環境的 DLL，所以
+`build.py` 把該環境的 `bin` 寫進 `aegisub_render/_dll_dirs.txt`（不 commit），`aegisub_render/__init__.py` 以
+`os.add_dll_directory` 載入，一般建置會刪掉這個檔案。MSYS2 的 fontconfig 會看到 `C:\Windows\Fonts`。
+C 函式庫仍是 UCRT（`long` 32 位元），所以 `_crt` 的結果與 MSVC 版相同。
+
 ## 測試
 
 ```powershell

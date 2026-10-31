@@ -16,6 +16,8 @@ uv run basedpyright                                # strict，要 0 errors
 uv run ruff check ; uv run ruff format --check
 uv run python native/sync_upstream.py SOURCE [--ref REF] [--dry-run]   # 換 Lua 執行環境的來源（見 README）
 uv run --group build python native/build.py        # 重編 .pyd 並重新產生 .pyi（tests/test_stubs.py 檢查一致）
+uv run --group build python native/build.py --msys2 F:\msys64\ucrt64   # Windows 上編 Linux 分支（會取代 commit 的 .pyd；
+                                                   # 之後跑一次一般建置換回）
                                                    # repo 搬家後先刪 native/builddir
 AEGISUB_RENDER_UPDATE_SNAPSHOTS=1 uv run pytest tests/test_cases.py   # 重新記錄 snapshot（只在 Windows）
 uv run python scripts/gen_cases.py                 # 以固定 seed 重新產生測試案例（CRLF）

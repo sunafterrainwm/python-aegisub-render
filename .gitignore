@@ -18,6 +18,8 @@ dist/
 /native/builddir/
 /native/builddir-*/
 /aegisub_render/**/*.so
+# written by native/build.py --msys2: where the modules it built find their DLLs
+/aegisub_render/_dll_dirs.txt
 /native/subprojects/LuaJIT-*/
 /native/subprojects/luajit/
 /native/subprojects/packagecache/

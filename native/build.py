@@ -4,6 +4,15 @@ regenerate their .pyi stubs (native/stubgen.py).
 Usage (from the repository root):
 
     uv run --group build python native/build.py
+    uv run --group build python native/build.py --msys2 F:\\msys64\\ucrt64   # Windows: the Linux branch
+
+--msys2 builds the Linux branch (meson option branch=linux: _font from _font.fcft.pyx, with
+fontconfig and HarfBuzz) on Windows with the gcc, pkg-config, fontconfig and HarfBuzz of an MSYS2
+environment (its prefix, or the MSYS2 root for its ucrt64), still for this Python. Its build
+directory is native/builddir-msys2-<environment>. The modules it copies into the package replace
+the committed MSVC ones (a plain build, or git checkout, puts those back), and need the
+environment's DLLs: their directory is written to aegisub_render/_dll_dirs.txt (not committed),
+which aegisub_render/__init__.py passes to os.add_dll_directory. A plain build removes that file.
 
 Requirements: on Windows, Visual Studio 2022 (or Build Tools) with the C++ x64 toolchain;
 elsewhere, a C compiler and the fontconfig and HarfBuzz development files (Debian:
@@ -20,6 +29,7 @@ LuaJIT subproject come from upstream.json too, and a change of upstream.json sta
 directory afresh.
 """
 
+import argparse
 import hashlib
 import json
 import os
@@ -34,6 +44,7 @@ ROOT = NATIVE.parent
 WINDOWS = sys.platform == "win32"
 BUILD_DIR = NATIVE / ("builddir" if WINDOWS else f"builddir-{sys.platform}")
 SUFFIX = ".pyd" if WINDOWS else ".so"
+DLL_DIRS = ROOT / "aegisub_render" / "_dll_dirs.txt"
 # extension module name -> package directory it is imported from
 MODULES: dict[str, Path] = {
     "_luajit": ROOT / "aegisub_render" / "lua",
@@ -42,7 +53,6 @@ MODULES: dict[str, Path] = {
 }
 
 LOCK = NATIVE / "upstream.json"
-STAMP = BUILD_DIR / "upstream.json.sha256"
 
 
 def load_lock() -> dict[str, object]:
@@ -132,33 +142,77 @@ def meson_command() -> list[str]:
     return [sys.executable, "-m", "mesonbuild.mesonmain"]
 
 
-def main() -> None:
+def msys2_prefix(path: Path) -> Path:
+    """An MSYS2 environment prefix (the directory with bin/gcc.exe), or the MSYS2 root for its ucrt64."""
+    for prefix in (path, path / "ucrt64"):
+        if (prefix / "bin" / "gcc.exe").is_file():
+            return prefix.resolve()
+    raise SystemExit(f"{path}: no bin/gcc.exe (install mingw-w64-ucrt-x86_64-gcc, -fontconfig and -harfbuzz there)")
+
+
+def msys2_environment(prefix: Path) -> dict[str, str]:
+    """This environment with the MSYS2 toolchain first: gcc as the C compiler, its pkg-config."""
+    env = dict(os.environ)
+    env["PATH"] = str(prefix / "bin") + os.pathsep + env.get("PATH", "")
+    env["CC"] = str(prefix / "bin" / "gcc.exe")
+    pkg_config = next(
+        (prefix / "bin" / n for n in ("pkg-config.exe", "pkgconf.exe") if (prefix / "bin" / n).is_file()), None
+    )
+    if pkg_config is None:
+        raise SystemExit(f"{prefix}: no pkg-config (install mingw-w64-ucrt-x86_64-pkgconf)")
+    env["PKG_CONFIG"] = str(pkg_config)
+    return env
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Build the extension modules and their stubs.")
+    parser.add_argument(
+        "--msys2",
+        type=Path,
+        metavar="ENV",
+        help="Windows only: build the Linux branch with an MSYS2 environment, e.g. F:\\msys64\\ucrt64",
+    )
+    args = parser.parse_args(argv)
     lock = load_lock()
     verify_vendored(lock)
-    env = msvc_environment() if WINDOWS else dict(os.environ)
+    options = ["--buildtype=release", "--backend=ninja", *luajit_options(lock)]
+    if args.msys2 is not None:
+        if not WINDOWS:
+            raise SystemExit("--msys2 is for Windows; elsewhere the Linux branch is the default")
+        prefix = msys2_prefix(args.msys2)
+        env = msys2_environment(prefix)
+        build_dir = NATIVE / f"builddir-msys2-{prefix.name}"
+        options.append("-Dbranch=linux")
+    else:
+        prefix = None
+        env = msvc_environment() if WINDOWS else dict(os.environ)
+        build_dir = BUILD_DIR
     meson = meson_command()
     bin_dir = str(Path(sys.executable).parent)
     env["PATH"] = bin_dir + os.pathsep + env.get("PATH", "")  # cython and ninja from this environment
+    stamp_file = build_dir / "upstream.json.sha256"
     stamp = sha256(LOCK)
-    if BUILD_DIR.exists() and (not STAMP.is_file() or STAMP.read_text(encoding="utf-8").strip() != stamp):
-        print(f"{LOCK.name} changed: starting {BUILD_DIR.name} afresh")
-        shutil.rmtree(BUILD_DIR)
-    if not (BUILD_DIR / "build.ninja").exists():
-        subprocess.run(
-            [*meson, "setup", str(BUILD_DIR), "--buildtype=release", "--backend=ninja", *luajit_options(lock)],
-            cwd=ROOT,
-            env=env,
-            check=True,
-        )
-        STAMP.write_text(stamp + "\n", encoding="utf-8")
-    subprocess.run([*meson, "compile", "-C", str(BUILD_DIR)], cwd=ROOT, env=env, check=True)
+    if build_dir.exists() and (not stamp_file.is_file() or stamp_file.read_text(encoding="utf-8").strip() != stamp):
+        print(f"{LOCK.name} changed: starting {build_dir.name} afresh")
+        shutil.rmtree(build_dir)
+    if not (build_dir / "build.ninja").exists():
+        subprocess.run([*meson, "setup", str(build_dir), *options], cwd=ROOT, env=env, check=True)
+        stamp_file.write_text(stamp + "\n", encoding="utf-8")
+    subprocess.run([*meson, "compile", "-C", str(build_dir)], cwd=ROOT, env=env, check=True)
     for name, package_dir in MODULES.items():
-        built = [p for p in BUILD_DIR.glob(f"{name}.*{SUFFIX}") if p.is_file()]
+        built = [p for p in build_dir.glob(f"{name}.*{SUFFIX}") if p.is_file()]
         if len(built) != 1:
-            raise SystemExit(f"expected one {name}.*{SUFFIX} in {BUILD_DIR}, found {built}")
+            raise SystemExit(f"expected one {name}.*{SUFFIX} in {build_dir}, found {built}")
         target = package_dir / built[0].name
         shutil.copy2(built[0], target)
         print(f"{target.relative_to(ROOT)}  sha256={sha256(target)}")
+    # the DLLs the MSYS2-built modules load (fontconfig, HarfBuzz, the gcc runtime)
+    if prefix is not None:
+        DLL_DIRS.write_text(str(prefix / "bin") + "\n", encoding="utf-8")
+        print(f"{DLL_DIRS.relative_to(ROOT)}: {prefix / 'bin'}")
+        print("the committed MSVC modules were replaced; a plain build (or git checkout) restores them")
+    else:
+        DLL_DIRS.unlink(missing_ok=True)
     # a fresh interpreter, so the modules just copied are the ones imported
     subprocess.run([sys.executable, str(NATIVE / "stubgen.py")], cwd=ROOT, check=True)
 

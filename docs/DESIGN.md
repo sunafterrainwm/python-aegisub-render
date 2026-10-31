@@ -86,6 +86,12 @@ ASS 讀寫與 kara-templater 都與 3.5.0 逐位元組相同，所以原生模�
   逐字相同，所以只有一份 `_font.pyi`，兩個平台的 `tests/test_stubs.py` 都檢查它；`_font.backend()` 回報
   `"gdi"` 或 `"fcft"`，測試以它（而不是 `sys.platform`）判斷 GDI 才有的行為。共用的純 Python 部分
   （字型檔副檔名、`name` 表解析）在 `host/fontnames.py`。分支由 `meson.options` 的 `branch` 決定（預設跟著主機）。
+- Windows 上可用 MSYS2 強制編 Linux 分支：`native/build.py --msys2 <環境>` 以該環境的 gcc／pkg-config／fontconfig／
+  HarfBuzz、`-Dbranch=linux` 建置（meson 仍在本專案的 Python 下執行，模組給它用；gcc 連結官方 MSVC 版 CPython
+  沒有問題）。DLL 目錄寫進 `aegisub_render/_dll_dirs.txt` 由 `aegisub_render/__init__.py` 以 `os.add_dll_directory`
+  載入（Python 3.8 起擴充模組的相依 DLL 不從 PATH 找）。UCRT64 的 C 函式庫是 UCRT，所以 `_crt` 與 MSVC 版相同；
+  MSYS2 的 fontconfig 會看到 Windows 字型（例如 "Arial" 在 900 會選到 Arial Black）。以 `F:\msys64\ucrt64`
+  （gcc 16、fontconfig 2.18、HarfBuzz 14）驗證：162 個測試通過、1 個 GDI 專用的略過。
 - 測試：參考檔與 snapshot 都是 Windows 的輸出。非 Windows 時要求逐行相同、只有數字可以不同，且每個數字在 5% 或 ±1
   以內（實測最大 4.2%）；snapshot 只在 Windows 重新記錄。
 
