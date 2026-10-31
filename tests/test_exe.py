@@ -4,11 +4,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from aegisub_render.settings import Settings
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="builds a Windows .exe launcher")
 def test_exe_runs_the_cli(tmp_path: Path, settings: Settings) -> None:
     exe = tmp_path / "bin" / "aegisub-render.exe"
     exe.parent.mkdir()

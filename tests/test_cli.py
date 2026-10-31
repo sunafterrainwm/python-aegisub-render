@@ -11,8 +11,9 @@ import pytest
 
 from aegisub_render.settings import Settings
 from aegisub_render.video.probe import cache_path
+from aegisub_render.wsl import is_wsl
 
-from .conftest import MINIMAL_ASS
+from .conftest import MINIMAL_ASS, wsl_test_fonts
 
 TEMPLATE_ASS = MINIMAL_ASS.replace(
     "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n",
@@ -25,6 +26,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def cli(*args: str, timeout: float = 120) -> subprocess.CompletedProcess[str]:
+    if args and args[0] in ("render", "list") and is_wsl() and (fonts := wsl_test_fonts()) is not None:
+        args = (args[0], "--font-dir", str(fonts), *args[1:])
     return subprocess.run(
         [sys.executable, str(ROOT / "aegisub-render.py"), *args],
         stdin=subprocess.DEVNULL,

@@ -35,7 +35,9 @@ PyAV 讀取，模仿 FFMS2 provider；結果快取在 `%TEMP%\aegisub-render\<sh
 
 ## 原生模組
 
-`_luajit`（LuaJIT＋lpeg＋luabins＋`native/src/shim.c`）、`_gdi`（text_extents、字型 name 表、`glyph_ink_boxes` 筆畫邊界）、`_crt`。
+`_luajit`（LuaJIT＋lpeg＋luabins＋`native/src/shim.c`）、`_gdi`（Windows：text_extents、字型 name 表、
+`glyph_ink_boxes` 筆畫邊界）或 `_fcft`（其他平台：fontconfig 選字、HarfBuzz 量測，函式同 `_gdi`）、`_crt`（該平台的 C 函式庫）。
+`text_extents.py` 依平台選 `_gdi`／`_fcft`；WSL 的路徑翻譯在 `aegisub_render/wsl.py`。
 `native/sync_upstream.py`：從某個 Aegisub 樹（GitHub 或本地 git；aegisub-3.5 或 arch1t3cht-feature 兩種寫法）取出
 LuaJIT／lpeg／luabins／MoonScript，寫進 `native/upstream.json`（來源、sha256、LuaJIT 選項、預期的 `jit.version`）。
 `native/build.py`：依 `upstream.json` 驗證 sha256 → MSVC 環境 → meson（`-Dluajit:...`，lock 變了就重建 builddir）

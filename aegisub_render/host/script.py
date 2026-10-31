@@ -142,6 +142,7 @@ class ScriptHost:
         support = Path(cfg.paths.decode("?data/automation/include/")) / "moonscript.lua"
         lua_cfg: dict[str, object] = {
             "include_dirs": cfg.include_dirs,
+            "dirsep": os.sep,
             "sealed_modules": list(SEALED_MODULES),
             "script_dir": str(script.parent),
             "script_stem": script.stem,

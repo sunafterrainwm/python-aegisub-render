@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import cast
 
 from aegisub_render.paths import AegisubPaths
+from aegisub_render.wsl import translate_path
 
 REPO_CONFIG = Path(__file__).resolve().parents[1] / "config.py"
 
@@ -72,13 +73,13 @@ def load_settings(explicit: Path | None = None) -> Settings:
         match attr:
             case "aegisub_root":
                 assert isinstance(value, (str, Path))
-                settings.aegisub_root = Path(value)
+                settings.aegisub_root = translate_path(value)
             case "font_dirs":
                 assert isinstance(value, list)
                 items: list[object] = value  # pyright: ignore[reportUnknownVariableType]
                 if not all(isinstance(v, (str, Path)) for v in items):
                     raise ConfigError(f"{path}: FONT_DIRS must be a list of paths")
-                settings.font_dirs = [Path(str(v)) for v in items]
+                settings.font_dirs = [translate_path(str(v)) for v in items]
             case "timeout_seconds":
                 assert isinstance(value, (int, float))
                 settings.timeout_seconds = float(value)

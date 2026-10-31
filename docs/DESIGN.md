@@ -63,6 +63,27 @@ ASS 讀寫與 kara-templater 都與 3.5.0 逐位元組相同，所以原生模�
 - 專案不安裝成套件（`package = false`、沒有 `src/` 層），由根目錄的 `aegisub-render.py` 啟動。
   錯誤經 `char **err` 傳回，回傳字串以同一個 CRT 的 `malloc` 配置，`ffi.C.free` 可正確釋放。
 
+## 非 Windows（Linux／WSL）
+
+- `text_extents` 照 `CalculateTextExtents` 的非 WIN32 分支：Aegisub 用 `wxMemoryDC::GetTextExtent`（GTK 上是 Pango
+  layout，字級 `(int)(fontsize*64)` pt），再把結果乘以 `fontsize / 行高`。所以 `height` 恆等於字級，寬度、descent
+  依同一比例，external leading 是 0（wxGCDC 一律給 0）；有 spacing 時逐字量測，spacing 也乘上該比例
+  （`fontsize / 以 96 dpi 換算的行高像素`）。空字串沒有 spacing 時仍有一行的高度（Pango 的空 layout），不像 GDI 是 0。
+- 字型選擇與量測（`host/_fcft.pyx`）像 libass：fontconfig（family、weight、slant → `FcConfigSubstitute` +
+  `FcDefaultSubstitute` + `FcFontMatch`），量測用 HarfBuzz 的 OpenType 函式（shaping 後的 advance、
+  `hb_font_get_h_extents` 的行高，與 Pango 相同），不需要 FreeType。字型替換警告比對 fontconfig 給出的所有語言的
+  family／fullname；`glyph_ink_boxes` 用 `hb_font_get_glyph_extents`。私人字型用 `FcConfigAppFontAddDir`。
+- `_crt` 在 Linux 呼叫 glibc（Aegisub 在 Linux 也是）：`atoi`／`strtol` 不飽和、`long` 是 64 位元。
+- LuaJIT 的錯誤會展開經過 C frame，非 Windows 時照 Aegisub 的 `meson.build` 以 `-fexceptions` 編譯。
+- 路徑照 `std::filesystem` 跟著平台走（`make_preferred` 只有 Windows 會換成 `\`），模組搜尋器用 `LUA_DIRSEP`。
+- WSL：`aegisub_render/wsl.py` 偵測 `/proc/sys/kernel/osrelease` 的 `microsoft`，把 config 與命令列上的
+  `X:\...` 換成 `/mnt/x/...`；`?user`／`?local` 取自 Windows 的 `%APPDATA%`／`%LOCALAPPDATA%`（`cmd.exe`）。
+  連結檔若是 Windows 磁碟機路徑，只在檢查檔案是否存在時翻譯，寫回時保持原樣。
+- `.so` 不 commit（依各系統的 fontconfig／HarfBuzz 版本），builddir 是 `native/builddir-<platform>`；
+  `.pyi`（含 `_fcft.pyi`）兩邊產生的內容相同，照常 commit。
+- 測試：參考檔與 snapshot 都是 Windows 的輸出。非 Windows 時要求逐行相同、只有數字可以不同，且每個數字在 5% 或 ±1
+  以內（實測最大 4.2%）；snapshot 只在 Windows 重新記錄。
+
 ## Lua host
 
 - `host/lua/bootstrap.lua` 重現 `auto4_lua.cpp`、`auto4_lua_assfile.cpp`、`auto4_lua_progresssink.cpp`、

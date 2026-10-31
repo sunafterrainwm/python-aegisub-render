@@ -5,7 +5,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from enum import IntEnum
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePath
 from typing import Final, Literal
 
 from aegisub_render.ass.entries import SubtitleFormatParseError
@@ -56,7 +56,7 @@ class Prepared:
 
 def resolve_script(name: str, paths: AegisubPaths, autoload_option: str) -> Path:
     """A path, or a file name looked up in ?user then ?data autoload directories."""
-    if any(sep in name for sep in "/\\") or PureWindowsPath(name).is_absolute():
+    if any(sep in name for sep in "/\\") or PurePath(name).is_absolute():
         p = Path(name)
         if not p.is_file():
             raise RenderError(f"script not found: {name}")

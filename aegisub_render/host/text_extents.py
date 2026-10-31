@@ -1,11 +1,20 @@
-"""aegisub.text_extents: Automation4::CalculateTextExtents (src/auto4_base.cpp), WIN32 branch."""
+"""aegisub.text_extents: Automation4::CalculateTextExtents (src/auto4_base.cpp).
+
+On Windows, its WIN32 branch through GDI (_gdi); elsewhere, its wxWidgets branch with the font
+chosen by fontconfig and measured by HarfBuzz (_fcft). Both modules have the same functions.
+"""
 
 import struct
+import sys
 from pathlib import Path
 
 from aegisub_render.ass.entries import AssStyle
-from aegisub_render.host import _gdi
 from aegisub_render.textenc import to_wide
+
+if sys.platform == "win32":
+    from aegisub_render.host import _gdi as _backend
+else:
+    from aegisub_render.host import _fcft as _backend
 
 FONT_SUFFIXES = (".ttf", ".otf", ".ttc", ".otc", ".fon", ".fnt")
 # Family, full name, typographic family: the names a LOGFONT face name can select a font by.
@@ -34,15 +43,30 @@ def font_names(table: bytes) -> set[str]:
 
 
 def register_private_fonts(dirs: list[Path]) -> int:
-    """Make the fonts in `dirs` available to this process only (AddFontResourceEx FR_PRIVATE)."""
+    """Make the fonts in `dirs` available to this process only: AddFontResourceEx(FR_PRIVATE) for
+    each font file on Windows, FcConfigAppFontAddDir elsewhere."""
     count = 0
     for d in dirs:
         if not d.is_dir():
             continue
-        for f in sorted(d.rglob("*")):
-            if f.suffix.lower() in FONT_SUFFIXES and _gdi.add_private_font(str(f)):
-                count += 1
+        fonts = [f for f in sorted(d.rglob("*")) if f.suffix.lower() in FONT_SUFFIXES]
+        if sys.platform == "win32":
+            count += sum(1 for f in fonts if _gdi_add_private_font(str(f)))
+        elif fonts and _fcft_add_private_font_dir(str(d)):
+            count += len(fonts)
     return count
+
+
+def _gdi_add_private_font(path: str) -> bool:
+    from aegisub_render.host import _gdi
+
+    return _gdi.add_private_font(path)
+
+
+def _fcft_add_private_font_dir(path: str) -> bool:
+    from aegisub_render.host import _fcft
+
+    return _fcft.add_private_font_dir(path)
 
 
 def _scaled_height(style: AssStyle) -> int:
@@ -63,7 +87,7 @@ class TextExtents:
         height = _scaled_height(style)
         spacing = style.spacing * 64
         face = to_wide(style.font)
-        result = _gdi.measure(
+        result = _backend.measure(
             face,
             height,
             style.bold,
@@ -86,7 +110,7 @@ class TextExtents:
         )
 
     def glyph_ink_boxes(self, style: AssStyle, text: str) -> tuple[int, list[tuple[bool, int, int, int, int]]] | None:
-        return _gdi.glyph_ink_boxes(
+        return _backend.glyph_ink_boxes(
             to_wide(style.font),
             _scaled_height(style),
             style.bold,
@@ -103,11 +127,23 @@ class TextExtents:
         if key in self._checked or actual.lower() == key or requested.startswith("@"):
             return
         self._checked.add(key)
-        # GetTextFace names the family in the user's language; the style may use any of its names.
-        table = _gdi.name_table(requested, style.bold, style.italic, style.encoding & 0xFF)
-        if table is not None and key in {name[:31].lower() for name in font_names(table)}:
+        # The family comes back in the user's language; the style may use any of the font's names.
+        if key in {name[:31].lower() for name in _face_names(requested, style)}:
             return
+        system = "Windows" if sys.platform == "win32" else "fontconfig"
         self.warnings.append(
-            f"aegisub-render: font '{requested}' is not installed; Windows substituted '{actual}' "
+            f"aegisub-render: font '{requested}' is not installed; {system} substituted '{actual}' "
             "for aegisub.text_extents (Aegisub would do the same)\n"
         )
+
+
+def _face_names(requested: str, style: AssStyle) -> set[str]:
+    """Every name of the font the system picks for `requested`, in every language."""
+    if sys.platform == "win32":
+        from aegisub_render.host import _gdi
+
+        table = _gdi.name_table(requested, style.bold, style.italic, style.encoding & 0xFF)
+        return font_names(table) if table is not None else set()
+    from aegisub_render.host import _fcft
+
+    return set(_fcft.family_names(requested, style.bold, style.italic) or [])

@@ -5,9 +5,12 @@ Usage (from the repository root):
 
     uv run --group build python native/build.py
 
-Requirements: Visual Studio 2022 (or Build Tools) with the C++ x64 toolchain; Cython, meson
-and ninja come from the `build` dependency group. Meson runs under this Python, so the modules
-are built for it (CPython 3.14).
+Requirements: on Windows, Visual Studio 2022 (or Build Tools) with the C++ x64 toolchain;
+elsewhere, a C compiler and the fontconfig and HarfBuzz development files (Debian:
+libfontconfig-dev libharfbuzz-dev). Cython, meson and ninja come from the `build` dependency
+group. Meson runs under this Python, so the modules are built for it (CPython 3.14). The
+Windows modules (.pyd) are committed; the others (.so) are built where they are used, in a
+build directory of their own (native/builddir-<platform>).
 
 Every vendored input is checked against the sha256 recorded in native/upstream.json (written
 by native/sync_upstream.py, which also records the Aegisub tree they came from) before
@@ -28,11 +31,13 @@ from typing import cast
 
 NATIVE = Path(__file__).resolve().parent
 ROOT = NATIVE.parent
-BUILD_DIR = NATIVE / "builddir"
+WINDOWS = sys.platform == "win32"
+BUILD_DIR = NATIVE / ("builddir" if WINDOWS else f"builddir-{sys.platform}")
+SUFFIX = ".pyd" if WINDOWS else ".so"
 # extension module name -> package directory it is imported from
 MODULES: dict[str, Path] = {
     "_luajit": ROOT / "aegisub_render" / "lua",
-    "_gdi": ROOT / "aegisub_render" / "host",
+    "_gdi" if WINDOWS else "_fcft": ROOT / "aegisub_render" / "host",
     "_crt": ROOT / "aegisub_render",
 }
 
@@ -130,7 +135,7 @@ def meson_command() -> list[str]:
 def main() -> None:
     lock = load_lock()
     verify_vendored(lock)
-    env = msvc_environment()
+    env = msvc_environment() if WINDOWS else dict(os.environ)
     meson = meson_command()
     bin_dir = str(Path(sys.executable).parent)
     env["PATH"] = bin_dir + os.pathsep + env.get("PATH", "")  # cython and ninja from this environment
@@ -148,9 +153,9 @@ def main() -> None:
         STAMP.write_text(stamp + "\n", encoding="utf-8")
     subprocess.run([*meson, "compile", "-C", str(BUILD_DIR)], cwd=ROOT, env=env, check=True)
     for name, package_dir in MODULES.items():
-        built = [p for p in BUILD_DIR.glob(f"{name}.*.pyd") if p.is_file()]
+        built = [p for p in BUILD_DIR.glob(f"{name}.*{SUFFIX}") if p.is_file()]
         if len(built) != 1:
-            raise SystemExit(f"expected one {name}.*.pyd in {BUILD_DIR}, found {built}")
+            raise SystemExit(f"expected one {name}.*{SUFFIX} in {BUILD_DIR}, found {built}")
         target = package_dir / built[0].name
         shutil.copy2(built[0], target)
         print(f"{target.relative_to(ROOT)}  sha256={sha256(target)}")

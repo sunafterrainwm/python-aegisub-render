@@ -3,17 +3,21 @@ __pycache__/
 *.py[cod]
 # ...except the extension modules built by native/build.py, which are committed
 !/aegisub_render/**/*.pyd
-.venv/
+# virtual environments: .venv (Windows), .venv-linux (WSL), ...
+.venv*
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
 dist/
 
-# Aegisub v3.5.0 source snapshot (reference only; see README)
+# Aegisub source snapshots (reference only; see README)
 /reference/
 
-# native build tree (the .pyd files copied into aegisub_render/ ARE committed)
+# native build trees (the Windows .pyd files copied into aegisub_render/ ARE committed;
+# the .so files built elsewhere are not)
 /native/builddir/
+/native/builddir-*/
+/aegisub_render/**/*.so
 /native/subprojects/LuaJIT-*/
 /native/subprojects/luajit/
 /native/subprojects/packagecache/
@@ -23,5 +27,7 @@ dist/
 
 # test scratch output
 /tests/_out/
+# copies of the Windows fonts the tests use, made under WSL (tests/conftest.py)
+/tests/.fonts/
 /native/subprojects/.wraplock
 .mypy_cache/

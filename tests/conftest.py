@@ -1,4 +1,5 @@
 import io
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -7,12 +8,36 @@ import pytest
 
 from aegisub_render.ass.file import AssFile
 from aegisub_render.ass.writer import serialize_ass
+from aegisub_render.host.text_extents import register_private_fonts
 from aegisub_render.output import Output
 from aegisub_render.runner import RenderOptions, prepare
 from aegisub_render.settings import Settings, load_settings
 from aegisub_render.worker import Result, execute
+from aegisub_render.wsl import is_wsl, translate, windows_env
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+# Under WSL, fontconfig does not know the Windows fonts. The ones the tests use are copied here
+# and loaded like FONT_DIRS (FcConfigAppFontAddDir), rather than adding all of C:\Windows\Fonts.
+WSL_FONTS = Path(__file__).parent / ".fonts"
+TEST_FONTS = (
+    "arial.ttf", "arialbd.ttf", "ariali.ttf", "arialbi.ttf",
+    "georgia.ttf", "georgiab.ttf", "georgiai.ttf", "georgiaz.ttf",
+    "msjh.ttc", "msjhbd.ttc",
+    "segoeui.ttf", "segoeuib.ttf", "segoeuii.ttf", "segoeuiz.ttf",
+    "YuGothR.ttc", "YuGothB.ttc",
+)  # fmt: skip
+
+
+def wsl_test_fonts() -> Path | None:
+    windows = Path(translate(windows_env("WINDIR") or "C:\\Windows")) / "Fonts"
+    WSL_FONTS.mkdir(exist_ok=True)
+    for name in TEST_FONTS:
+        source, copy = windows / name, WSL_FONTS / name
+        if source.is_file() and not copy.exists():
+            shutil.copyfile(source, copy)
+    return WSL_FONTS if any(WSL_FONTS.iterdir()) else None
+
 
 MINIMAL_ASS = """[Script Info]
 Title: test
@@ -56,11 +81,20 @@ class RunLua(Protocol):
     ) -> Run: ...
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _wsl_fonts_in_this_process() -> None:  # pyright: ignore[reportUnusedFunction]
+    """Tests that measure text in this process see the copied fonts too (renders get FONT_DIRS)."""
+    if is_wsl() and (fonts := wsl_test_fonts()) is not None:
+        register_private_fonts([fonts])
+
+
 @pytest.fixture(scope="session")
 def settings() -> Settings:
     s = load_settings()
     if not (s.aegisub_root / "automation").is_dir():
         pytest.skip(f"Aegisub installation not found at {s.aegisub_root}")
+    if is_wsl() and (fonts := wsl_test_fonts()) is not None:
+        s.font_dirs = [*s.font_dirs, fonts]
     return s
 
 

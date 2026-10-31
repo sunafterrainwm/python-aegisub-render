@@ -2,21 +2,26 @@
 cases a Python emulation got wrong."""
 
 import math
+import sys
 
 from aegisub_render import _crt
 
+WINDOWS = sys.platform == "win32"
 
-def test_atoi_saturates_like_msvc() -> None:
+
+def test_atoi() -> None:
+    """The platform's C library, as Aegisub links it: the MSVC UCRT saturates on overflow, glibc
+    returns (int)strtol (64-bit long, truncated)."""
     assert _crt.atoi(" -12abc") == -12
-    assert _crt.atoi("99999999999") == 2**31 - 1
-    assert _crt.atoi("-99999999999") == -(2**31)
+    assert _crt.atoi("99999999999") == (2**31 - 1 if WINDOWS else _crt.wrap_int32(99999999999))
+    assert _crt.atoi("-99999999999") == (-(2**31) if WINDOWS else _crt.wrap_int32(-99999999999))
     assert _crt.atoi("x") == 0
 
 
 def test_strtol_hex() -> None:
     assert _crt.strtol_hex("ff&") == 255
     assert _crt.strtol_hex("0x1F") == 31  # strtol accepts the 0x prefix in base 16
-    assert _crt.strtol_hex("FFFFFFFFFF") == 2**31 - 1
+    assert _crt.strtol_hex("FFFFFFFFFF") == (2**31 - 1 if WINDOWS else 0xFFFFFFFFFF)  # long: 32 or 64 bits
 
 
 def test_printf_formats() -> None:
@@ -30,7 +35,7 @@ def test_printf_formats() -> None:
 def test_lua_integer_conversions() -> None:
     assert _crt.lua_tointeger(-2.7) == -2
     assert _crt.lua_tointeger(math.nan) == -(2**63)  # cvttsd2si's "integer indefinite"
-    assert _crt.lua_tolong(2.0**33 + 5) == 5  # stored into a 32-bit long
+    assert _crt.lua_tolong(2.0**33 + 5) == (5 if WINDOWS else 2**33 + 5)  # long is 32-bit on Windows only
     assert _crt.wrap_int32(2**31) == -(2**31)
 
 

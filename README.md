@@ -12,7 +12,8 @@
 
 ## 需求
 
-- Windows x64（`text_extents` 用 GDI；Cython 擴充模組是為 CPython 3.14 / win_amd64 編譯的）
+- Windows x64（`text_extents` 用 GDI；repo 內附為 CPython 3.14 / win_amd64 編譯好的 Cython 擴充模組），
+  或 Linux／WSL（自行編譯，見下方「Linux／WSL」）
 - Python 3.14、[uv](https://docs.astral.sh/uv/)
 - Aegisub 3.5.1 安裝目錄（預設 `C:\Program Files\Aegisub`）
 
@@ -180,6 +181,28 @@ Timecodes File、Keyframes File；也支援 `?dummy:` 影片。影片資訊以 P
 
 沒有影片時，`aegisub.video_size()`、`frame_from_ms`、`ms_from_frame` 回傳 nil，`keyframes()` 回傳空表，
 與 Aegisub 相同；`get_audio_selection()`、`aegisub.dialog.*` 會拋出「not implemented」錯誤。
+
+## Linux／WSL
+
+非 Windows 時 `aegisub.text_extents` 照 Aegisub 在 Linux 的做法（wxWidgets／Pango）：像 libass 一樣用 fontconfig
+選字型、用 HarfBuzz 量測，行高縮放成字級（`height` 就是字級，寬度與 descent 依同一比例，external leading 為 0）。
+C 執行期行為用 glibc（Aegisub 在 Linux 也是），模組搜尋器的分隔字元是 `/`。
+
+```bash
+sudo apt install libfontconfig-dev libharfbuzz-dev build-essential   # Debian/Ubuntu
+export UV_PROJECT_ENVIRONMENT=.venv-linux    # 和 Windows 的 .venv 分開（.venv* 都已 gitignore）
+uv sync --group build
+uv run --group build python native/build.py # 編出 .so（不 commit），builddir 是 native/builddir-linux
+uv run pytest
+```
+
+在 WSL 裡，`config.py` 與命令列上的 Windows 路徑（`C:\Program Files\Aegisub`、`D:\sub\x.ass`）會自動換成
+`/mnt/c/...`，`?user` 取自 Windows 的 `%APPDATA%`，所以同一份 `config.py` 兩邊都能用。fontconfig 看不到 Windows
+的字型；需要的字型可用 `FONT_DIRS`／`--font-dir` 指定（以 `FcConfigAppFontAddDir` 載入），不必把整個
+`C:\Windows\Fonts` 加進去。測試在 WSL 下會把用到的幾個 Windows 字型複製到 `tests/.fonts/`（gitignore）再載入。
+
+量測方式不同，所以用到字寬／位置的模板在 Linux 的輸出數值會和 Windows 略有差異（12 個測試案例中 6 個逐位元組
+相同，其餘 6 個只差數字，最多約 4%）；`tests/test_cases.py` 在非 Windows 上以此容許範圍比對。
 
 ## 測試
 

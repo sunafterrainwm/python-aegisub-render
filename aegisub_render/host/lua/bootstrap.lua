@@ -275,7 +275,7 @@ end
 -- agi::lua::module_loader
 local function module_loader(name)
 	if is_sealed(name) then return end
-	local module = sgsub(name, "%.", "\\")
+	local module = sgsub(name, "%.", cfg.dirsep)  -- LUA_DIRSEP: "\" on Windows, "/" elsewhere
 	for _, tok in ipairs(split_semicolon(package_path)) do
 		local filename = sgsub(tok, "%?", function() return module end)
 		local path = filename

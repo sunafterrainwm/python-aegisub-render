@@ -106,13 +106,13 @@ def test_ffi_gate(run_lua: RunLua, tmp_path: Path) -> None:
             """
             -- trusted: a file loaded through the module loader (the script directory is an include path)
             local m = require("uses_ffi")
-            check(m.os == "Windows" and m.sizeof == 4, "ffi from an include file")
+            check(m.os == jit.os and m.sizeof == 4, "ffi from an include file")
             -- untrusted: code compiled at run time (like kara-templater template code)
             local f = loadstring('return require("ffi")', "template code")
             local ok, err = pcall(f)
             check(not ok and tostring(err):find("blocked"), "ffi from template code: " .. tostring(err))
             -- the script file itself is trusted
-            check(require("ffi").os == "Windows", "ffi from the script")
+            check(require("ffi").os == jit.os, "ffi from the script")
             """
         )
     )
@@ -329,7 +329,8 @@ def test_text_extents(run_lua: RunLua) -> None:
             local w, h, d, e = aegisub.text_extents(style, "Hello")
             check(w > 50 and w < 150 and h > 30 and h < 60, ("extents %g %g"):format(w, h))
             local w0, h0 = aegisub.text_extents(style, "")
-            check(w0 == 0 and h0 == 0, "GDI reports an empty extent for empty text")
+            -- GDI measures nothing for empty text; a Pango layout (Aegisub elsewhere) is one line high
+            check(w0 == 0 and h0 == (jit.os == "Windows" and 0 or style.fontsize), "empty text")
             style.scale_x = 200
             check(math.abs(aegisub.text_extents(style, "Hello") - 2 * w) < 1e-9, "scale_x")
             """

@@ -23,6 +23,7 @@ from aegisub_render.output import Output, use_utf8_for_pipes
 from aegisub_render.runner import STDOUT, ExitCode, RenderOptions, list_features, render
 from aegisub_render.settings import ConfigError, Settings, load_settings
 from aegisub_render.video.context import VideoOptions
+from aegisub_render.wsl import translate, translate_path
 
 _NEGATIVE_OFFSET_RE = re.compile(r"^-[\d.]")
 
@@ -80,7 +81,7 @@ def parse_margins(spec: str) -> tuple[int, int, int]:
 
 def parse_output(spec: str) -> Path | Literal["-"]:
     """'-' is stdout; a file named '-' can still be given as './-'."""
-    return STDOUT if spec == STDOUT else Path(spec)
+    return STDOUT if spec == STDOUT else translate_path(spec)
 
 
 def parse_offset_arg(spec: str) -> Offset:
@@ -91,11 +92,13 @@ def parse_offset_arg(spec: str) -> Offset:
 
 
 def _base_common(p: argparse.ArgumentParser) -> None:
-    p.add_argument("input", type=Path, help="subtitle file (.ass/.ssa)")
+    p.add_argument("input", type=translate_path, help="subtitle file (.ass/.ssa)")
     p.add_argument(
-        "--config", type=Path, help="config file (default: AEGISUB_RENDER_CONFIG or the repository's config.py)"
+        "--config",
+        type=translate_path,
+        help="config file (default: AEGISUB_RENDER_CONFIG or the repository's config.py)",
     )
-    p.add_argument("--aegisub-root", type=Path, help="Aegisub installation directory (?data)")
+    p.add_argument("--aegisub-root", type=translate_path, help="Aegisub installation directory (?data)")
     appdata = p.add_mutually_exclusive_group()
     appdata.add_argument(
         "--load-appdata",
@@ -115,13 +118,15 @@ def _base_common(p: argparse.ArgumentParser) -> None:
 def _video_args(p: argparse.ArgumentParser) -> None:
     video = p.add_argument_group("video")
     v = video.add_mutually_exclusive_group()
-    v.add_argument("--video", help="video to load instead of the project's Video File (also ?dummy:...)")
+    v.add_argument(
+        "--video", type=translate, help="video to load instead of the project's Video File (also ?dummy:...)"
+    )
     v.add_argument("--no-video", action="store_true", help="behave as if no video were loaded")
     video.add_argument("--video-size", type=parse_size, metavar="WxH", help="override the video frame size")
     tc = video.add_mutually_exclusive_group()
     tc.add_argument("--fps", help="constant frame rate (e.g. 23.976 or 24000/1001)")
-    tc.add_argument("--timecodes", help="timecodes file (v1 or v2)")
-    video.add_argument("--keyframes", help="keyframes file")
+    tc.add_argument("--timecodes", type=translate, help="timecodes file (v1 or v2)")
+    video.add_argument("--keyframes", type=translate, help="keyframes file")
     video.add_argument("--refresh-cache", action="store_true", help="re-probe the video instead of using the cache")
     video.add_argument("--no-cache", action="store_true", help="neither read nor write the video cache")
 
@@ -172,12 +177,14 @@ def _output_args(p: argparse.ArgumentParser) -> None:
 
 def _common(p: argparse.ArgumentParser) -> None:
     _base_common(p)
-    p.add_argument("--script", help="script path, or file name looked up in the autoload directories")
+    p.add_argument("--script", type=translate, help="script path, or file name looked up in the autoload directories")
     p.add_argument("--timeout", type=float, help="wall-clock limit in seconds")
     p.add_argument("--memory-limit", type=int, help="Lua heap limit in bytes")
     p.add_argument("--max-output-lines", type=int, help="limit on lines produced by the script")
     p.add_argument("--max-input-lines", type=int, help="limit on lines in the input file")
-    p.add_argument("--font-dir", type=Path, action="append", default=[], help="extra font directory (repeatable)")
+    p.add_argument(
+        "--font-dir", type=translate_path, action="append", default=[], help="extra font directory (repeatable)"
+    )
     p.add_argument("--trace-level", type=int, choices=range(6), help="aegisub.debug.out threshold (0-5)")
     p.add_argument("-v", "--verbose", action="count", default=0, help="raise the trace level by one per -v")
     p.add_argument("-q", "--quiet", action="store_true", help="only print errors and script output")
@@ -188,9 +195,13 @@ def _common(p: argparse.ArgumentParser) -> None:
 def _measure_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("text", help="text string to measure")
     p.add_argument(
-        "--config", type=Path, help="config file (default: AEGISUB_RENDER_CONFIG or the repository's config.py)"
+        "--config",
+        type=translate_path,
+        help="config file (default: AEGISUB_RENDER_CONFIG or the repository's config.py)",
     )
-    p.add_argument("--font-dir", type=Path, action="append", default=[], help="extra font directory (repeatable)")
+    p.add_argument(
+        "--font-dir", type=translate_path, action="append", default=[], help="extra font directory (repeatable)"
+    )
     p.add_argument("-q", "--quiet", action="store_true", help="only print errors")
     p.add_argument(
         "-o",
@@ -202,7 +213,7 @@ def _measure_args(p: argparse.ArgumentParser) -> None:
     _override_args(p)
 
     style_grp = p.add_argument_group("style")
-    style_grp.add_argument("--ass", type=Path, help="load base style and resolution from an .ass/.ssa file")
+    style_grp.add_argument("--ass", type=translate_path, help="load base style and resolution from an .ass/.ssa file")
     style_grp.add_argument("--style", default="Default", help="style name in --ass (default: Default)")
     style_grp.add_argument("--font", help="font family name (required unless --ass is given)")
     style_grp.add_argument("--fontsize", type=float, help="font size in points/pixels (required unless --ass is given)")

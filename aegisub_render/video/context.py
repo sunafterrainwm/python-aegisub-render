@@ -9,7 +9,7 @@ except that links which could not be loaded are kept instead of dropped.
 import math
 import os
 from dataclasses import dataclass, field
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePath, PureWindowsPath
 
 from aegisub_render.ass.file import AssFile
 from aegisub_render.cutil import mid, try_parse_double, try_parse_int
@@ -17,6 +17,7 @@ from aegisub_render.paths import AegisubPaths, is_dummy_path, make_preferred
 from aegisub_render.video.keyframes import KeyframeFormatError, load_keyframes
 from aegisub_render.video.probe import parse_dummy, probe_video
 from aegisub_render.video.vfr import Framerate, FramerateError
+from aegisub_render.wsl import translate
 
 
 @dataclass(slots=True)
@@ -64,7 +65,9 @@ def _generic_relative(path: str, base: str) -> str:
         return path.replace("\\", "/")
     if is_dummy_path(path):
         return path.replace("\\", "/")
-    p, b = PureWindowsPath(path), PureWindowsPath(base)
+    if PureWindowsPath(path).drive and not PureWindowsPath(base).drive:
+        return path.replace("\\", "/")  # a Windows path kept outside Windows (under WSL): another drive
+    p, b = PurePath(path), PurePath(base)
     if p.drive and p.drive.lower() != b.drive.lower():
         return str(p).replace("\\", "/")
     pp, bp = list(p.parts), list(b.parts)
@@ -84,7 +87,7 @@ def build_video_context(
     script_dir = paths.get("?script")
 
     def absolute(p: str) -> str:
-        return paths.make_absolute(p, "?script")
+        return paths.make_absolute(translate(p), "?script")  # under WSL, X:\\... is /mnt/x/...
 
     def exists(p: str) -> bool:
         return bool(p) and Path(p).exists()
@@ -191,7 +194,8 @@ def build_video_context(
             return _generic_relative(loaded, base)
         if not linked or same_dir or is_dummy_path(linked):
             return linked
-        return _generic_relative(absolute(linked), base)
+        # a Windows drive path stays one (it is only translated to look for the file under WSL)
+        return _generic_relative(linked if PureWindowsPath(linked).drive else absolute(linked), base)
 
     props.audio_file = saved_path(loaded_audio, props.audio_file)
     props.video_file = saved_path(loaded_video, props.video_file)
