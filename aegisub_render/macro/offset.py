@@ -98,7 +98,7 @@ def offset(
             line.start = clamp_time(line.start + shift.amount)
             line.end = clamp_time(line.end + shift.amount)
 
-    data = serialize_ass(ass, aeg.save_ui_state)
+    data = serialize_ass(ass, aeg.save_ui_state, options.keep_brand)
     return _write_output(data, original, input_path, output_path, save_to, options.dry_run, out)
 
 

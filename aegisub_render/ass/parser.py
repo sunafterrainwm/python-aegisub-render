@@ -81,6 +81,7 @@ class AssParser:
         self.attachment_active = False
         self.attachment_group = Group.FONT
         self.attachment_data = ""
+        self.in_header = True  # still in the comments that open [Script Info]
 
     def finish_attachment(self) -> None:
         self.target.attachments.append(AssAttachment(self.attachment_data, self.attachment_group))
@@ -99,7 +100,10 @@ class AssParser:
 
     def parse_script_info_line(self, data: str) -> None:
         if data.startswith(";"):
+            if self.in_header:
+                self.target.header_comments.append(data)
             return
+        self.in_header = False
         if data.startswith("ScriptType:"):
             version_str = trim(data[11:]).lower()
             if version_str == "v4.00":

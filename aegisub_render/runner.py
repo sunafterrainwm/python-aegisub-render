@@ -40,6 +40,7 @@ class RenderOptions:
     quiet: bool = False
     progress: bool | None = None
     dry_run: bool = False  # write nothing; print how the result differs from the input instead
+    keep_brand: bool = False  # write the input's header comments unchanged (see writer.header_lines)
 
 
 class RenderError(Exception):
@@ -50,6 +51,7 @@ class RenderError(Exception):
 class Prepared:
     job: Job
     save_ui_state: bool
+    keep_brand: bool = False
 
 
 def resolve_script(name: str, paths: AegisubPaths, autoload_option: str) -> Path:
@@ -123,15 +125,15 @@ def prepare(
         selection=options.selection,
         force=options.force,
     )
-    return Prepared(job, aeg.save_ui_state)
+    return Prepared(job, aeg.save_ui_state, options.keep_brand)
 
 
 def output_data(prepared: Prepared, ass: AssFile) -> bytes:
     """What Aegisub writes after the script ran. Export filters only run in File > Export, which
     writes with ExportFile; a macro is followed by File > Save."""
     if prepared.job.filter is not None:
-        return serialize_export(ass, prepared.save_ui_state)
-    return serialize_ass(ass, prepared.save_ui_state)
+        return serialize_export(ass, prepared.save_ui_state, prepared.keep_brand)
+    return serialize_ass(ass, prepared.save_ui_state, prepared.keep_brand)
 
 
 def _write_output(
