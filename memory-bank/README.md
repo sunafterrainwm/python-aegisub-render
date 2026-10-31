@@ -10,7 +10,7 @@
 | [systemPatterns.md](systemPatterns.md) | 架構與反覆使用的設計模式 | 偶爾 |
 | [techContext.md](techContext.md) | 工具鏈、建置、測試、開發慣例 | 偶爾 |
 | activeContext.md（本機，不 commit） | 現況、尚未定案的事、下一步（做過什麼看 `git log`） | 每次工作 |
-| [progress.md](progress.md) | 已完成、待辦、已知問題 | 每次工作 |
+| progress.md（本機，不 commit） | 已完成、待辦、已知問題 | 每次工作 |
 
 讀的順序：projectbrief → activeContext（若本機有）→ 其他依需要。工作結束前更新 activeContext 與 progress。
-activeContext.md 只放在本機（`.gitignore`），不進 git 歷史；沒有就照它在本表的用途新建。
+activeContext.md 與 progress.md 只放在本機（`.gitignore`），不進 git 歷史；沒有就照它們在本表的用途新建。

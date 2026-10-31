@@ -34,5 +34,6 @@ dist/
 /native/subprojects/.wraplock
 .mypy_cache/
 
-# memory-bank/activeContext.md is this machine's working notes, not part of the repository
+# memory-bank/activeContext.md and progress.md are this machine's working notes, not part of the repository
 /memory-bank/activeContext.md
+/memory-bank/progress.md
