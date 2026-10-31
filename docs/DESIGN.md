@@ -36,6 +36,20 @@ ASS 讀寫與 kara-templater 都與 3.5.0 逐位元組相同，所以原生模�
 - 綁定用 Cython（`.pyx` 實作、`.pxd` C 宣告、`.pyi` 型別）：`_luajit` 擴充模組靜態連結 LuaJIT + lpeg 0.10 + luabins + shim
   （與 Aegisub 把它們連進 exe 的方式相同）；`_gdi` 做 `text_extents` 的 GDI 量測；`_crt` 用 MSVC UCRT 本身計算
   Aegisub 依賴的 C 行為（`atoi`、`strtol`、`%g`/`%f`、C 轉型），取代原本的 Python 模擬。
+- Lua 執行環境的來源可以換：`native/sync_upstream.py` 從 GitHub（逐檔讀取，不 clone）或本地 git 的指定
+  tag／commit／分支（或 `9706-cibuilds-20caaabc0` 這類版本字串，取最後一段為 commit）取出 `luajit.wrap`、
+  LuaJIT 的 meson 選項、lpeg、luabins 與 MoonScript，寫進 `native/upstream.json`（來源、commit、sha256、選項、
+  預期的 `jit.version`）。只認兩種寫法：
+  - **aegisub-3.5**：固定雜湊的 `[wrap-file]`（wrapdb 的 LuaJIT port），`subprojects/luabins`，
+    選項取自上游 `meson.build` 的 `'luajit:...'`。
+  - **arch1t3cht-feature**：`[wrap-git]` + `patch_directory = luajit`（`subprojects/packagefiles/luajit` 自己的 meson
+    建置，固定開 lua52compat、沒有選項），`vendor/luabins`。上游 `revision = v2.1` 是會移動的分支，
+    為了可重現，固定成該分支在來源 commit 日期當時的 commit（這是推定：實際建置可能稍晚）；`jit.version` 照
+    LuaJIT `genversion.lua` 的做法算：`luajit_rolling.h` 的 `LUAJIT_VERSION` 把 `ROLLING` 換成該 commit 的 committer 時間戳。
+  feature_12 實測：LuaJIT `v2.1` → `97813fb`（`LuaJIT 2.1.1727870382`，與編出來的一致）、MoonScript 0.5.0，
+  luabins 與 lpeg 與 3.5.1 逐位元組相同；用它編譯後全部測試通過。換來源只換執行環境，Lua API 仍是 3.5.1 的。
+- LuaJIT 的選項不再寫死在根目錄 `meson.build`，由 `native/build.py` 依 `upstream.json` 傳給 `meson setup`；
+  `upstream.json` 變了（以 sha256 判斷）就整個重建 builddir。
 - `.pyi` 由 `native/stubgen.py` 從編好的模組產生（Cython 沒有 stub 產生器，改用 `embedsignature.format=python`
   嵌入的簽名），不手寫。
   最初的 ctypes 版本慢約 3 倍，且 ctypes callback 的 `int` 回傳值只寫入 4 個位元組，LuaJIT 卻把整個 RAX 當索引用。

@@ -1,15 +1,16 @@
 # Builds the extension modules of aegisub-render (run native/build.py, which also checks the
 # vendored sources, copies the results into the package and generates their .pyi stubs):
 #
-#   aegisub_render/lua/_luajit.pyd  - LuaJIT as Aegisub 3.5.1 builds it, plus lpeg, luabins and the
-#                                     host shim, with the Cython binding (_luajit.pyx/.pxd)
+#   aegisub_render/lua/_luajit.pyd  - LuaJIT as the Aegisub tree in native/upstream.json builds it,
+#                                     plus lpeg, luabins and the host shim, with the Cython binding
 #   aegisub_render/host/_gdi.pyd    - GDI text measurement for aegisub.text_extents (_gdi.pyx/.pxd)
 #   aegisub_render/_crt.pyd         - C runtime behaviour (atoi, strtol, printf %g/%f, C casts)
 #
-# The Lua runtime mirrors Aegisub v3.5.1 (unchanged since v3.5.0: meson.build, libaegisub/meson.build, subprojects/):
-#   - LuaJIT from native/subprojects/luajit.wrap (copied verbatim, same source/patch sha256),
-#     with the exact options Aegisub sets: static, amalgam, lua52compat, no luajit binary
-#   - luabins from native/subprojects/luabins (copied verbatim)
+# The Lua runtime mirrors an Aegisub source tree (Aegisub v3.5.1 by default), taken by
+# native/sync_upstream.py and recorded in native/upstream.json:
+#   - LuaJIT from native/subprojects/luajit.wrap (copied verbatim, or with a branch revision
+#     pinned), with the options that tree passes to it (given to meson setup by native/build.py)
+#   - luabins sources in native/subprojects/luabins (copied verbatim)
 #   - lpeg 0.10 from libaegisub/lua/modules/lpeg.c (native/src/lpeg.c, copied verbatim)
 #   - MSVC x64, buildtype=release, dynamic CRT (Aegisub's CI "Windows MSVC Release")
 project('aegisub_render', ['c', 'cython'],
@@ -21,11 +22,7 @@ project('aegisub_render', ['c', 'cython'],
             'buildtype=release',
             'b_ndebug=if-release',
             'cython_language=c',
-
-            'luajit:default_library=static',
-            'luajit:amalgam=true',
-            'luajit:lua52compat=true',
-            'luajit:luajit=false',
+            # the options of the luajit subproject are passed by native/build.py (native/upstream.json)
         ],
         version: '3.5.1')
 

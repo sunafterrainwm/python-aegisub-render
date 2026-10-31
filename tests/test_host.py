@@ -1,5 +1,6 @@
 """The Lua host: environment, sandbox, aegisub API and the subtitles object."""
 
+import json
 import textwrap
 from pathlib import Path
 
@@ -8,6 +9,9 @@ from aegisub_render.settings import Settings
 from aegisub_render.video.context import VideoOptions
 
 from .conftest import RunLua
+
+# what native/sync_upstream.py expects the built LuaJIT to call itself
+LOCK = json.loads((Path(__file__).resolve().parent.parent / "native" / "upstream.json").read_text(encoding="utf-8"))
 
 
 def macro(body: str) -> str:
@@ -26,7 +30,7 @@ def test_luajit_runtime(run_lua: RunLua) -> None:
     r = run_lua(
         macro(
             """
-            check(jit.version == "LuaJIT 2.1.1720049189", jit.version)
+            check(jit.version == "@LUAJIT_VERSION@", jit.version)
             check(tostring(1.0) == "1", "tostring(1.0)")
             check(tostring(10000000000000000) == "1e+16", "big numbers")
             check(string.format("%d", 1.5) == "1", "format %d truncates")
@@ -39,7 +43,7 @@ def test_luajit_runtime(run_lua: RunLua) -> None:
             math.randomseed(42)
             check(a == math.random(1, 1000), "seeded random is repeatable")
             aegisub.debug.out(0, "random=%d\\n", a)
-            """
+            """.replace("@LUAJIT_VERSION@", LOCK["luajit"]["version"])
         )
     )
     assert r.result.status == "ok", r.log

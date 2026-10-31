@@ -226,10 +226,28 @@ uv run ruff check
 uv run --group build python native/build.py
 ```
 
-根目錄的 `meson.build`（subproject 放在 `native/subprojects/`）照抄 Aegisub v3.5.1（與 v3.5.0 相同）：`luajit.wrap`
-（同一個原始碼與 wrapdb patch 的 sha256）、`luabins/`、`libaegisub/lua/modules/lpeg.c`，選項與 Aegisub 相同
-（static、amalgam、lua52compat、release、動態 CRT）；`build.py` 會先檢查這些檔案的 sha256 與 v3.5.1 一致，
-編好後把 `.pyd` 複製進套件目錄並重新產生 `.pyi`。新增的只有 `native/src/shim.c`（限制記憶體的 allocator、
+根目錄的 `meson.build`（subproject 放在 `native/subprojects/`）照抄 Aegisub 的建置：`luajit.wrap`、`luabins/`、
+`libaegisub/lua/modules/lpeg.c`，以及 Aegisub 傳給 LuaJIT subproject 的選項（3.5.1 是 static、amalgam、lua52compat；
+另外是 release、動態 CRT）。這些檔案來自哪個 Aegisub 原始碼、sha256 與 LuaJIT 選項都記在 `native/upstream.json`；
+`build.py` 先檢查 sha256，把選項交給 `meson setup`（`upstream.json` 變了就重建 builddir），
+編好後把 `.pyd` 複製進套件目錄並重新產生 `.pyi`。
+
+### 換成別的 Aegisub 的 Lua 執行環境
+
+```powershell
+uv run python native/sync_upstream.py TypesettingTools/Aegisub --ref v3.5.1          # 預設的狀態
+uv run python native/sync_upstream.py https://github.com/arch1t3cht/Aegisub/releases/tag/feature_12
+uv run python native/sync_upstream.py arch1t3cht/Aegisub --ref 9706-cibuilds-20caaabc0   # 版本字串 → commit 20caaabc0
+uv run python native/sync_upstream.py D:\src\Aegisub --ref HEAD --dry-run               # 本地 git
+uv run --group build python native/build.py
+```
+
+從 GitHub 時逐檔讀取（不 clone），本地則用 `git show`。取出 LuaJIT（`luajit.wrap` 與其選項）、lpeg、luabins 與
+MoonScript（`automation/include/moonscript.lua`，只當內附的備用版本），取代本地的對應檔案並更新 `native/upstream.json`。
+只接受兩種寫法：TypesettingTools 3.5.x（固定雜湊的 `[wrap-file]`、`subprojects/luabins`）與 arch1t3cht 的 feature 版
+（`[wrap-git]` + `subprojects/packagefiles/luajit`、`vendor/luabins`）；其他一律拒絕且不改任何檔案。`[wrap-git]` 的
+`revision` 若是分支（如 `v2.1`），固定成該分支在來源 commit 日期當時的 commit，並據此算出 `jit.version`
+（`tests/test_host.py` 以它檢查編好的 LuaJIT）。Lua API 仍是本工具重現的 3.5.1 行為，不隨來源改變。新增的只有 `native/src/shim.c`（限制記憶體的 allocator、
 panic handler、preload lpeg/luabins、照抄 `agi::lua::error`/`argerror` 的報錯函式）與 Cython 模組。
 LuaJIT 官方不提供二進位檔，其他來源（MSYS2、conda-forge）的版本與編譯選項都和 Aegisub 不同。
 

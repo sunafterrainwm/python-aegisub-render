@@ -1,7 +1,7 @@
 * text=auto eol=lf
 *.dll binary
 *.pyd binary
-# vendored from the Aegisub v3.5.0 snapshot: keep the exact bytes (native/build.py checks their sha256)
+# vendored from an Aegisub tree (native/upstream.json): keep the exact bytes (native/build.py checks their sha256)
 native/src/lpeg.c -text
 native/src/lpeg.h -text
 native/subprojects/** -text

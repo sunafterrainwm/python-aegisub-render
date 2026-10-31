@@ -14,6 +14,7 @@ uv sync                                            # repo 搬家後若 uv run �
 uv run pytest                                      # pytest 設定含 -p no:faulthandler（LuaJIT 用 SEH 拋錯）
 uv run basedpyright                                # strict，要 0 errors
 uv run ruff check ; uv run ruff format --check
+uv run python native/sync_upstream.py SOURCE [--ref REF] [--dry-run]   # 換 Lua 執行環境的來源（見 README）
 uv run --group build python native/build.py        # 重編 .pyd 並重新產生 .pyi（tests/test_stubs.py 檢查一致）
                                                    # repo 搬家後先刪 native/builddir
 AEGISUB_RENDER_UPDATE_SNAPSHOTS=1 uv run pytest tests/test_cases.py   # 重新記錄 snapshot

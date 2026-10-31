@@ -15,6 +15,7 @@ dist/
 # native build tree (the .pyd files copied into aegisub_render/ ARE committed)
 /native/builddir/
 /native/subprojects/LuaJIT-*/
+/native/subprojects/luajit/
 /native/subprojects/packagecache/
 
 # built by scripts/build_exe.py; holds this machine's absolute paths

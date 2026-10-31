@@ -1,0 +1,102 @@
+{
+  "source": "https://github.com/TypesettingTools/Aegisub",
+  "ref": "v3.5.1",
+  "commit": "088ca6caa878209e279871f8897273f49342372b",
+  "date": "2026-10-17T15:48:51Z",
+  "layout": "aegisub-3.5",
+  "luajit": {
+    "kind": "wrap-file",
+    "revision": "04dca7911ea255f37be799c18d74c305b921c1a6",
+    "wrapdb_version": "2.1.1720049189-2",
+    "version": "LuaJIT 2.1.1720049189"
+  },
+  "luajit_meson_options": [
+    "default_library=static",
+    "amalgam=true",
+    "lua52compat=true",
+    "luajit=false"
+  ],
+  "moonscript": "0.7.0",
+  "files": {
+    "aegisub_render/host/lua/moonscript.lua": {
+      "from": "automation/include/moonscript.lua",
+      "sha256": "7f69f7892ae3cfa45b17fa9296b4cf05105177d91872648bd6c13def2696fbb8"
+    },
+    "native/src/lpeg.c": {
+      "from": "libaegisub/lua/modules/lpeg.c",
+      "sha256": "78b8469d543383a69bb3e5fcc8a65fb5ee61fd1672baaa11958917b16868e8ef"
+    },
+    "native/src/lpeg.h": {
+      "from": "libaegisub/lua/modules/lpeg.h",
+      "sha256": "7b4930365ba289d0d1a2d0c7d43fcf786fc286999654f86b5470ec1ebf99dc78"
+    },
+    "native/subprojects/luabins/meson.build": {
+      "from": "subprojects/luabins/meson.build",
+      "sha256": "c74809d78b665c0c10d142f0a7435708c84c0b099631f197f8d48cf6f3829cd6"
+    },
+    "native/subprojects/luabins/src/fwrite.c": {
+      "from": "subprojects/luabins/src/fwrite.c",
+      "sha256": "97305a6bdbd1354e81c34346cb49e7d9433f9a720dfcfbe3b729599669105097"
+    },
+    "native/subprojects/luabins/src/fwrite.h": {
+      "from": "subprojects/luabins/src/fwrite.h",
+      "sha256": "917f49a59c328320adfa7a5f221befe05ae3c8295cb5f0f3d3d2eef015e02dc0"
+    },
+    "native/subprojects/luabins/src/load.c": {
+      "from": "subprojects/luabins/src/load.c",
+      "sha256": "f028861424fa3397a6ecbb72b9694ee75700d30bc7389c6d0487518d6ccfdff2"
+    },
+    "native/subprojects/luabins/src/luabins.c": {
+      "from": "subprojects/luabins/src/luabins.c",
+      "sha256": "690e1e465f0f8519c21f9621c43f29dccfb7bb2a5547c89068ff589081feae2e"
+    },
+    "native/subprojects/luabins/src/luabins.h": {
+      "from": "subprojects/luabins/src/luabins.h",
+      "sha256": "c04d9db5a4802555f6374e406d290483661c8b67bd84f4cf8e24d74b80840758"
+    },
+    "native/subprojects/luabins/src/luaheaders.h": {
+      "from": "subprojects/luabins/src/luaheaders.h",
+      "sha256": "f347d2af91a01b047089dea3cd49cebe44fd32630e00cc19f8f24acd57ca16b7"
+    },
+    "native/subprojects/luabins/src/luainternals.c": {
+      "from": "subprojects/luabins/src/luainternals.c",
+      "sha256": "f68cd6679026237f1e6ae3f058792cb093353c778eec699b6a419f5add51bce5"
+    },
+    "native/subprojects/luabins/src/luainternals.h": {
+      "from": "subprojects/luabins/src/luainternals.h",
+      "sha256": "a3fe1e82259ffc96ed47c4180b1c824b95e36dedc1ad2da07eddd4d168a2aa0a"
+    },
+    "native/subprojects/luabins/src/lualess.h": {
+      "from": "subprojects/luabins/src/lualess.h",
+      "sha256": "8e092149f07d3658127755b1952cfc328703b58856cb6b969741f74756a5f627"
+    },
+    "native/subprojects/luabins/src/save.c": {
+      "from": "subprojects/luabins/src/save.c",
+      "sha256": "48e9be479a514bff80c5c913cfc02630ab834a210071beeada4d159767cc4494"
+    },
+    "native/subprojects/luabins/src/savebuffer.c": {
+      "from": "subprojects/luabins/src/savebuffer.c",
+      "sha256": "38d1e3f05efd52da8f6b8cd1de731eb52b0eadd19c311e4c09322d32d1bc0fee"
+    },
+    "native/subprojects/luabins/src/savebuffer.h": {
+      "from": "subprojects/luabins/src/savebuffer.h",
+      "sha256": "6d2c7aff265032968951f4926827c812ba3f7b75ab1a3989383d386ef93178b4"
+    },
+    "native/subprojects/luabins/src/saveload.h": {
+      "from": "subprojects/luabins/src/saveload.h",
+      "sha256": "1155e446aa805aa82c41464f164cfdbde2091e6a101b050c979bda9ed498939c"
+    },
+    "native/subprojects/luabins/src/write.c": {
+      "from": "subprojects/luabins/src/write.c",
+      "sha256": "43bd4954724244ef9e403111cec2683f6fb7f40a4e6cb8d02b0dccd620fc64cc"
+    },
+    "native/subprojects/luabins/src/write.h": {
+      "from": "subprojects/luabins/src/write.h",
+      "sha256": "c9081af9a76ee8864d97818c2eeefa9f3d4cbc1c39e3f34a8c0fb9011297108d"
+    },
+    "native/subprojects/luajit.wrap": {
+      "from": "subprojects/luajit.wrap",
+      "sha256": "3bad67fc4af0625152c059c5f22d1b67677814e2757a5307b8debd0e54d4177f"
+    }
+  }
+}
