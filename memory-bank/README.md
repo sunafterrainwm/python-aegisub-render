@@ -9,7 +9,7 @@
 | [productContext.md](productContext.md) | 為什麼做、使用方式與行為上的決定 | 偶爾 |
 | [systemPatterns.md](systemPatterns.md) | 架構與反覆使用的設計模式 | 偶爾 |
 | [techContext.md](techContext.md) | 工具鏈、建置、測試、開發慣例 | 偶爾 |
-| [skillDesign.md](skillDesign.md) | 附帶的 ass-oped-karaoke 技能：設計依據與測試紀錄 | 偶爾 |
+| [skillDesign.md](skillDesign.md) | `skills/` 底下兩個技能的設計依據與測試紀錄 | 偶爾 |
 | activeContext.md（本機，不 commit） | 現況、尚未定案的事、下一步（做過什麼看 `git log`） | 每次工作 |
 | progress.md（本機，不 commit） | 已完成、待辦、已知問題 | 每次工作 |
 

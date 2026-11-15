@@ -1,4 +1,9 @@
-# 技能設計與測試紀錄（ass-oped-karaoke）
+# 附帶技能的設計與測試紀錄
+
+`skills/` 底下有兩個技能：`ass-oped-karaoke`（從頭做一首）與 `kara-templater-decouple`
+（讀懂／重構既有特效）。兩個都只透過 `aegisub_render` 的 Python API 動字幕。
+
+## ass-oped-karaoke
 
 `skills/ass-oped-karaoke/` 是這個 repo 附的 Claude Code 技能：用 `aegisub_render` 的 Python API 做動畫
 OP／ED 的卡拉OK特效字幕。技能本體與它的參考文件都在那個資料夾裡，使用方式看 `SKILL.md`，這裡只記
@@ -36,6 +41,18 @@ OP／ED 的卡拉OK特效字幕。技能本體與它的參考文件都在那個�
 它需要另一個 Python 環境（torch CPU、torchaudio、demucs、soundfile），第一次使用時下載 demucs
 `htdemucs`（人聲分離，約 80 MB）與 torchaudio `MMS_FA`（強制對位，約 1.2 GB）到本機；技能會先問
 使用者才裝。沒有它就退回 `align.py` ＋頻譜目視。這兩個模型的授權見 `THIRD_PARTY_NOTICES.md`。
+
+## kara-templater-decouple
+
+從一次實際的「特效寫死在 `code once` 裡」解藕工作整理出來的，2026-11-15 併進這個 repo
+（原本是本機的獨立技能）。它**沒有 evals**：價值在踩過的坑（kara-templater 的幾個會讓人卡住的行為、
+`line.x`／`$sx` 為什麼是黑名單）、度量怎麼從樣式推算回來、以及怎麼量化證明「沒變」
+（fx 行多重集合＋骨架配對、libass 燒字算 PSNR 與逐格像素差、冪等性）。
+
+併進來時改掉的舊引用：寫死的 repo 絕對路徑改成 repo 相對、`aegisub-render.exe` 改成
+`ScriptRender`／`render()`、行號基準從 Aegisub 3.5.0 改成 3.5.1（在 `reference/aegisub-3.5.1/`
+的樹上核對過），兩支會讀 .ass 的腳本改用 `AssFile` 與 `entry_data()`（共用入口是 `scripts/ktd.py`，
+等同 ass-oped-karaoke 的 `oped.py`）。
 
 ## 這個 repo 的 lint 不管技能
 

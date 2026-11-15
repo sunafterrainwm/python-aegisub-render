@@ -1,6 +1,6 @@
 ---
 name: ass-oped-karaoke
-description: 用 Aegisub kara-templater 做動畫 OP／ED 的卡拉OK特效字幕（歌詞特效＋曲名 credit）：決定 \k 逐詞時間、把每句的效果與資料放進 Name 欄位與 inline fx、把 Lua 特效原始碼同步進 .ass 的 code／template 行、用 aegisub_render 的 Python API 套用模板並渲染，再做 lite／NCOP-NCED／繁簡衍生版與驗證（冪等、fx 行比對、燒字取幀目視）。看到「OP/ED 卡拉OK特效」「kfx」「片頭片尾特效字幕」「歌詞逐字特效」「曲名 credit 排版」「NCOP/NCED 版字幕」「lite 版特效」「\k 時間對不準／要對位」「強制對位／人聲分離」「BPM 拍點」「把 Lua 寫進 code once 行」「套模板後要驗證畫面沒變」「燒字截圖檢查」這類需求就用這個 skill，即使沒提到 kara-templater。只要讀懂或重構既有特效（不是從頭做一首），用 kara-templater-decouple。
+description: 用 Aegisub kara-templater 做動畫 OP／ED 的卡拉OK特效字幕：抓 \k 逐詞時間（強制對位／BPM／頻譜）、把每句的資料放進 Name 欄位與 inline fx、Lua 特效與 .ass 的 code 行同步、用 aegisub_render 套模板並驗證（冪等、fx 行比對、燒字取幀），再衍生 lite／NCOP-NCED／繁簡版。看到「OP/ED 卡拉OK特效」「kfx」「歌詞逐字特效」「曲名 credit」「NCOP/NCED 版字幕」「\k 時間要對位」這類需求就用，即使沒提到 kara-templater。只要讀懂或重構既有特效，用 kara-templater-decouple。
 ---
 
 # OP／ED 卡拉OK特效字幕
