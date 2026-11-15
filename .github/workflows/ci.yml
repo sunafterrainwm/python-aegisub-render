@@ -70,6 +70,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libfontconfig-dev libharfbuzz-dev
 
+      # LuaJIT's meson build calls sed; Git for Windows ships it, but not on PATH by default.
+      - name: Put Git's Unix tools on PATH
+        if: runner.os == 'Windows'
+        run: Add-Content $env:GITHUB_PATH "C:\Program Files\Git\usr\bin"
+
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true

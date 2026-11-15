@@ -102,8 +102,12 @@ def verify_vendored(lock: dict[str, object]) -> None:
 
 
 def msvc_environment() -> dict[str, str]:
-    """Environment of a "x64 Native Tools" prompt (what Aegisub's CI gets from Enter-VsDevShell)."""
-    if "VCINSTALLDIR" in os.environ:
+    """Environment of a "x64 Native Tools" prompt (what Aegisub's CI gets from Enter-VsDevShell).
+
+    Already being in such a prompt is only believed when cl.exe is actually on PATH: some CI
+    images (GitHub's windows runners) export VCINSTALLDIR without the toolchain's PATH.
+    """
+    if "VCINSTALLDIR" in os.environ and shutil.which("cl") is not None:
         return dict(os.environ)
     vswhere = Path(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"))
     vswhere = vswhere / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
@@ -136,7 +140,12 @@ def msvc_environment() -> dict[str, str]:
     for line in dump.splitlines():
         key, sep, value = line.partition("=")
         if sep:
-            env[key] = value
+            # cmd prints "Path=", os.environ (and the code below) says "PATH": upper-case the
+            # names like Python does on Windows, so the child does not get both spellings.
+            env[key.upper()] = value
+    if shutil.which("cl", path=env.get("PATH")) is None:
+        raise SystemExit(f"{vcvars} did not put cl.exe on PATH")
+    print(f"MSVC toolchain: {env.get('VCTOOLSINSTALLDIR', install)}")
     return env
 
 

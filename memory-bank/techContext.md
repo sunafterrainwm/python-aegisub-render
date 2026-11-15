@@ -47,6 +47,10 @@ push 到 `master`、每個 PR 與手動都會跑三個 job：`ruff`（check ＋ 
 Linux 的 job 會 `apt-get install libfontconfig-dev libharfbuzz-dev`；Windows 的 MSVC 環境由
 `native/build.py` 自己用 vswhere ＋ `vcvars64.bat` 找，不需要額外的 action。
 
+**Windows 上建置還需要 `sed` 在 PATH 上** —— LuaJIT 的 meson 會呼叫它。從 Git Bash 跑就有；
+從 PowerShell 跑要自己把 `C:\Program Files\Git\usr\bin` 加進 PATH（CI 有一個步驟做這件事），
+不然 meson setup 會停在 `Program 'sed' not found`。
+
 相依更新由 Renovate 顧（`renovate.json`，用 `sunafterrainwm/renovate-config` 的共用設定），
 workflow 裡 action 的版本也在它的管轄範圍。
 
