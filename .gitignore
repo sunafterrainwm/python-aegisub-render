@@ -40,10 +40,9 @@ dist/
 
 # skill eval material (real works' video and subtitles) and other local test packs
 /skills-test/
-/skills/ass-oped-karaoke/evals/
+/skills/*/evals/
+/skills/*/evals-real/
 
-/skills/ass-oped-karaoke/evals-real/
-
-# 對位工具的音訊／分離／特徵快取（建在作品資料夾裡，可能在任何地方）
+# the aligners' audio/separation/feature caches, written next to the material being worked on
 .falign-cache/
 .align-cache/
