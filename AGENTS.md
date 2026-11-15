@@ -13,6 +13,7 @@ Agent 每次開新 session 都對這個專案一無所知，`memory-bank/` 就�
 | `memory-bank/productContext.md` | 為誰而做、要解決的問題、使用方式與行為決定 | commit |
 | `memory-bank/systemPatterns.md` | 架構、關鍵決定、載重的模組 | commit |
 | `memory-bank/techContext.md` | 工具鏈、建置、測試、常用指令、開發慣例 | commit |
+| `memory-bank/skillDesign.md` | 附帶的 ass-oped-karaoke 技能：設計依據與測試紀錄 | commit |
 | `memory-bank/activeContext.md` | 現在在做什麼、尚未定案的事 | **只在本機，git 忽略** |
 | `memory-bank/progress.md` | 已完成、待辦、已知問題 | **只在本機，git 忽略** |
 

@@ -1,0 +1,21 @@
+[Script Info]
+; 範例：一首虛構歌曲的 OP 卡拉OK特效骨架（歌詞是自己編的，不是任何作品的）
+Title: demo OP kfx
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: DemoJP,Arial,70,&H00FFFFFF,&H000000FF,&H00603A1C,&H00000000,-1,0,0,0,100,100,0,0,1,2,1,8,100,100,969,1
+Style: DemoCHT,Arial,70,&H00FFFFFF,&H000000FF,&H00603A1C,&H00000000,-1,0,0,0,100,100,0,0,1,2,1,8,100,100,872,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Comment: 0,0:00:01.00,0:00:05.00,DemoJP,,0,0,0,karaoke,{\k45\-hi}ひかり{\k40} {\k45\-n}の{\k50}さき{\k60}へ
+Comment: 0,0:00:01.00,0:00:05.00,DemoCHT,,0,0,0,karaoke,{\k45}向著{\k40} {\k45\-hi}光的{\k50\-n}前{\k60}方
+Comment: 0,0:00:05.20,0:00:09.00,DemoJP,top plain,0,0,0,karaoke,{\k50}あたらしい{\k45}あさ{\k55}が{\k60}くる
+Comment: 0,0:00:05.20,0:00:09.00,DemoCHT,top plain,0,0,0,karaoke,{\k50}嶄新的{\k45}早晨{\k55}就要{\k60}來臨

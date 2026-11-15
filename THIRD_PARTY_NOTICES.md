@@ -15,3 +15,6 @@
 本專案重現 Aegisub 3.5.1 Automation 4 的執行環境；Aegisub 以 BSD 3-Clause 授權散布
 （https://github.com/TypesettingTools/Aegisub）。執行時載入的 `kara-templater.lua`、`karaskel` 等腳本
 來自使用者自己安裝的 Aegisub，不在這個 repo 裡。
+
+`ass-oped-karaoke` 技能的強制對位（`falign.py`）在執行時由使用者自行下載 demucs 與 torchaudio 的
+`MMS_FA` 模型；它們不在這個 repo 裡，各有自己的授權，使用前請自行確認（尤其是商業用途）。

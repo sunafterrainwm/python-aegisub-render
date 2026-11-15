@@ -59,7 +59,10 @@ module-name = "aegisub_render"
 [tool.ruff]
 line-length = 120
 target-version = "py314"
-extend-exclude = ["reference", "native/subprojects"]
+# skills/ holds the ass-oped-karaoke skill: standalone scripts shipped with it, not part of the
+# package (falign.py even runs on an older Python of its own). skills-test/ is the untracked local
+# folder holding the skills' eval material; keep it out of ruff's way too.
+extend-exclude = ["reference", "native/subprojects", "skills", "skills-test"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "PL", "PT", "ANN", "TID"]

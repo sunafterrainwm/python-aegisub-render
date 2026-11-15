@@ -1,0 +1,4 @@
+# lite 版：只有本體層，沒有光暈（所以 fxgroup 開關也不需要）。
+# 同一份 demo.lua，遞移裁剪會把沒用到的定義留在外面。
+2 | DemoJP  | template syl noblank | !demoSyl('body')! | 歌詞本體
+2 | DemoCHT | template syl noblank | !demoSyl('body')! | 歌詞本體

@@ -1,0 +1,7 @@
+# 模板清單：layer | style | effect | text | name(可省略)
+# 完整版：光暈層 ＋ 本體層。lite 版（templates_demo_lite.txt）只有本體層。
+0 | DemoJP  | code line all                  | fxgroup.glow=not HASFLAG(line.actor,"plain") | 分組開關
+1 | DemoJP  | template syl noblank fxgroup glow | !demoSyl('glow')! | 歌詞光暈
+1 | DemoCHT | template syl noblank fxgroup glow | !demoSyl('glow')! | 歌詞光暈
+2 | DemoJP  | template syl noblank              | !demoSyl('body')! | 歌詞本體
+2 | DemoCHT | template syl noblank              | !demoSyl('body')! | 歌詞本體

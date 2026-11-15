@@ -475,3 +475,18 @@ LuaJIT 官方不提供二進位檔，其他來源（MSYS2、conda-forge）的版
   3.5.0 在這裡讀錯堆疊位置（會變成「找不到模組」或印出模組名稱），本工具一開始就刻意修正，3.5.1 也修好了。
 
 設計決策的完整紀錄見 [docs/DESIGN.md](docs/DESIGN.md)。
+
+## ass-oped-karaoke 技能
+
+`skills/ass-oped-karaoke/` 是一個 Claude Code 技能：用本工具做動畫 OP／ED 的卡拉OK特效字幕
+（逐詞 `\k`、Name 欄位與 inline fx、Lua ↔ code 行同步、套模板、驗證、取幀、NC／lite 衍生版）。
+
+- 安裝：把 `skills/ass-oped-karaoke` 整個複製到 `~/.claude/skills/ass-oped-karaoke`（或某個專案的
+  `.claude/skills/`），然後在 Claude Code 裡用 `/ass-oped-karaoke`。
+- 用法、Name 欄位規格與各腳本的說明都在技能裡：`skills/ass-oped-karaoke/SKILL.md` 與 `references/`。
+- 執行環境要的東西（Python 3.14、`aegisub_render`、Aegisub 3.5.1、ffmpeg、numpy、Pillow…）用
+  `python -X utf8 skills/ass-oped-karaoke/scripts/verify.py env` 逐項檢查。
+- 設計依據與測試紀錄：[memory-bank/skillDesign.md](memory-bank/skillDesign.md)。
+
+技能執行時另外會用到兩個開源模型，只有使用強制對位（`falign.py`）時才需要，第一次使用時下載到本機：
+demucs `htdemucs`（人聲分離，約 80 MB）與 torchaudio `MMS_FA`（強制對位，約 1.2 GB）。

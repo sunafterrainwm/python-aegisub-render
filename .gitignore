@@ -37,3 +37,13 @@ dist/
 # memory-bank/activeContext.md and progress.md are this machine's working notes, not part of the repository
 /memory-bank/activeContext.md
 /memory-bank/progress.md
+
+# skill eval material (real works' video and subtitles) and other local test packs
+/skills-test/
+/skills/ass-oped-karaoke/evals/
+
+/skills/ass-oped-karaoke/evals-real/
+
+# 對位工具的音訊／分離／特徵快取（建在作品資料夾裡，可能在任何地方）
+.falign-cache/
+.align-cache/
