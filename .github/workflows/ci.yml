@@ -34,8 +34,8 @@ jobs:
     name: ruff
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with:
           enable-cache: true
       - run: uv sync
@@ -46,8 +46,8 @@ jobs:
     name: basedpyright
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with:
           enable-cache: true
       # the committed .pyi stubs are what gets checked, so no native build is needed here
@@ -62,7 +62,7 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install the Linux font stack
         if: runner.os == 'Linux'
@@ -75,7 +75,7 @@ jobs:
         if: runner.os == 'Windows'
         run: Add-Content $env:GITHUB_PATH "C:\Program Files\Git\usr\bin"
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v10
         with:
           enable-cache: true
 
