@@ -1,0 +1,98 @@
+name: CI
+
+# What CI can check is limited on purpose. The byte-for-byte case tests
+# (tests/test_cases.py, tests/test_host.py, tests/test_script_render.py, tests/test_cli.py)
+# need an Aegisub 3.5.1 installation for its automation scripts, and the text measurement
+# tests need the Windows fonts the fixtures were recorded with. Neither exists on a hosted
+# runner, so this workflow lints, type checks, builds the extension modules on both branches
+# (MSVC/GDI and fontconfig/HarfBuzz) and runs the tests that do not depend on either.
+# The full suite stays a local step -- see memory-bank/techContext.md.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # tests that need neither an Aegisub installation nor a particular font
+  PYTEST_TARGETS: >-
+    tests/test_ass.py
+    tests/test_crt.py
+    tests/test_diff.py
+    tests/test_output.py
+    tests/test_stubs.py
+    tests/test_sync_upstream.py
+  PYTHONUTF8: "1"
+
+jobs:
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+
+  types:
+    name: basedpyright
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      # the committed .pyi stubs are what gets checked, so no native build is needed here
+      - run: uv sync
+      - run: uv run basedpyright
+
+  build:
+    name: build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install the Linux font stack
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libfontconfig-dev libharfbuzz-dev
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - run: uv sync --group build
+
+      # LuaJIT is downloaded and linked statically by meson; on Windows the MSVC environment
+      # comes from vswhere + vcvars64.bat inside build.py, so no extra setup step is needed.
+      - name: Build the extension modules
+        run: uv run --group build python native/build.py
+
+      - name: Import what was built
+        run: uv run python -c "from aegisub_render import _crt; from aegisub_render.host import _font; from aegisub_render.lua import _luajit; print(_font.backend())"
+
+      - name: Tests that do not need Aegisub or specific fonts
+        run: uv run pytest ${{ env.PYTEST_TARGETS }}
+
+      # GDI measurement against the fonts the fixtures were recorded with; Windows runners
+      # have Arial and Georgia, and the tests skip the faces they do not find.
+      - name: Text measurement (Windows only)
+        if: runner.os == 'Windows'
+        run: uv run pytest tests/test_text_extents.py tests/test_exe.py
+
+      # tests/test_stubs.py above already compares the committed .pyi with freshly generated
+      # ones. The binaries themselves are not compared: a rebuilt .pyd is not byte-identical
+      # to the committed one, and the Linux .so are not committed at all.

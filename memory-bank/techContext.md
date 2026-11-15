@@ -32,6 +32,24 @@
 - 為了 mypy 與 PEP 561，`src/aegisub_render/py.typed` 必須存在（空檔）。
 - 不要發佈 wheel：`.pyd` 是針對單一直譯器編好後 commit 進 repo 的，wheel 的平台／ABI 標記會是錯的。
 
+## CI（GitHub Actions，`.github/workflows/ci.yml`）
+
+push 到 `master`、每個 PR 與手動都會跑三個 job：`ruff`（check ＋ format）、`basedpyright`
+（吃 commit 進去的 `.pyi`，不需要先建置）、`build and test`（windows-latest 與 ubuntu-latest
+各一：裝相依、`native/build.py` 編兩個分支的原生模組、import 進來、再跑測試）。
+
+**CI 刻意跑不完整個測試套件**：逐位元組的案例測試要有 Aegisub 3.5.1 的 automation 腳本，量字測試
+要有錄製 fixture 時的那幾個 Windows 字型，hosted runner 兩者都沒有。所以 CI 只跑
+`tests/test_{ass,crt,diff,output,stubs,sync_upstream}.py`（`PYTEST_TARGETS`），Windows 上多跑
+`test_text_extents.py` 與 `test_exe.py`。**完整的 `uv run pytest` 仍然只在本機跑得完**，
+改動渲染行為時不要只看 CI 綠燈。
+
+Linux 的 job 會 `apt-get install libfontconfig-dev libharfbuzz-dev`；Windows 的 MSVC 環境由
+`native/build.py` 自己用 vswhere ＋ `vcvars64.bat` 找，不需要額外的 action。
+
+相依更新由 Renovate 顧（`renovate.json`，用 `sunafterrainwm/renovate-config` 的共用設定），
+workflow 裡 action 的版本也在它的管轄範圍。
+
 ## 常用指令
 
 ```powershell
