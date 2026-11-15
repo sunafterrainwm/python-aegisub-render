@@ -23,7 +23,7 @@ Two layouts are understood:
 
 Both take lpeg from libaegisub/lua/modules and MoonScript from automation/include/moonscript.lua.
 Anything else is refused and nothing changes. The result replaces the vendored files
-(native/subprojects, native/src/lpeg.*, aegisub_render/host/lua/moonscript.lua) and
+(native/subprojects, native/src/lpeg.*, src/aegisub_render/host/lua/moonscript.lua) and
 native/upstream.json, which records where they came from, the sha256 native/build.py checks
 and the meson options for the LuaJIT subproject. Rebuild with native/build.py afterwards.
 """
@@ -55,7 +55,7 @@ LUABINS_SOURCES = (
 COMMON_FILES = {  # local path -> upstream path, the same in both layouts
     "native/src/lpeg.c": "libaegisub/lua/modules/lpeg.c",
     "native/src/lpeg.h": "libaegisub/lua/modules/lpeg.h",
-    "aegisub_render/host/lua/moonscript.lua": "automation/include/moonscript.lua",
+    "src/aegisub_render/host/lua/moonscript.lua": "automation/include/moonscript.lua",
 }
 PACKAGEFILES = "subprojects/packagefiles/luajit"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
@@ -361,7 +361,7 @@ def plan(source: Source, ref: str) -> Plan:
     for name in LUABINS_SOURCES:
         files[f"native/subprojects/luabins/src/{name}"] = (f"{luabins_src}/{name}", need(f"{luabins_src}/{name}"))
 
-    m = MOONSCRIPT_VERSION_RE.search(files["aegisub_render/host/lua/moonscript.lua"][1])
+    m = MOONSCRIPT_VERSION_RE.search(files["src/aegisub_render/host/lua/moonscript.lua"][1])
     if not m:
         problems.append("automation/include/moonscript.lua: no moonscript.version module (not a bundled MoonScript)")
     if problems:

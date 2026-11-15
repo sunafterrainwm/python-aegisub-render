@@ -47,41 +47,41 @@ def entry_from_flat(flat: Flat, ass: AssFile) -> AssEntry:
     if cls == "info":
         return AssInfo(_s(flat[1]), _s(flat[2]))
     if cls == "style":
-        s = AssStyle()
-        s.name = _s(flat[1])
-        s.font = _s(flat[2])
-        s.fontsize = _f(flat[3])
-        s.primary = Color.parse(_s(flat[4]))
-        s.secondary = Color.parse(_s(flat[5]))
-        s.outline = Color.parse(_s(flat[6]))
-        s.shadow = Color.parse(_s(flat[7]))
-        s.bold = _b(flat[8])
-        s.italic = _b(flat[9])
-        s.underline = _b(flat[10])
-        s.strikeout = _b(flat[11])
-        s.scalex = _f(flat[12])
-        s.scaley = _f(flat[13])
-        s.spacing = _f(flat[14])
-        s.angle = _f(flat[15])
-        s.borderstyle = _i(flat[16])
-        s.outline_w = _f(flat[17])
-        s.shadow_w = _f(flat[18])
-        s.alignment = _i(flat[19])
-        s.margin = [_i(flat[20]), _i(flat[21]), _i(flat[22])]
-        s.encoding = _i(flat[23])
-        s.update_data()
-        return s
+        return AssStyle(
+            name=_s(flat[1]),
+            font=_s(flat[2]),
+            fontsize=_f(flat[3]),
+            primary=Color.parse(_s(flat[4])),
+            secondary=Color.parse(_s(flat[5])),
+            outline=Color.parse(_s(flat[6])),
+            shadow=Color.parse(_s(flat[7])),
+            bold=_b(flat[8]),
+            italic=_b(flat[9]),
+            underline=_b(flat[10]),
+            strikeout=_b(flat[11]),
+            scalex=_f(flat[12]),
+            scaley=_f(flat[13]),
+            spacing=_f(flat[14]),
+            angle=_f(flat[15]),
+            borderstyle=_i(flat[16]),
+            outline_w=_f(flat[17]),
+            shadow_w=_f(flat[18]),
+            alignment=_i(flat[19]),
+            margin=[_i(flat[20]), _i(flat[21]), _i(flat[22])],
+            encoding=_i(flat[23]),
+        )
     if cls == "dialogue":
-        d = AssDialogue()
-        d.comment = _b(flat[1])
-        d.layer = _i(flat[2])
-        d.start = clamp_time(_i(flat[3]))
-        d.end = clamp_time(_i(flat[4]))
-        d.style = _s(flat[5])
-        d.actor = _s(flat[6])
-        d.margin = [_i(flat[7]), _i(flat[8]), _i(flat[9])]
-        d.effect = _s(flat[10])
-        d.text = _s(flat[11])
+        d = AssDialogue(
+            comment=_b(flat[1]),
+            layer=_i(flat[2]),
+            start=clamp_time(_i(flat[3])),
+            end=clamp_time(_i(flat[4])),
+            style=_s(flat[5]),
+            actor=_s(flat[6]),
+            margin=[_i(flat[7]), _i(flat[8]), _i(flat[9])],
+            effect=_s(flat[10]),
+            text=_s(flat[11]),
+        )
         extra: object = flat[12] if len(flat) > 12 else False
         if extra is not False:
             kv = as_flat(extra)

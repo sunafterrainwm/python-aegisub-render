@@ -5,11 +5,15 @@ requires-python = ">=3.14"
 [[package]]
 name = "aegisub-render"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
-    { name = "av" },
     { name = "regex" },
     { name = "tqdm" },
+]
+
+[package.optional-dependencies]
+video = [
+    { name = "av" },
 ]
 
 [package.dev-dependencies]
@@ -19,6 +23,7 @@ build = [
     { name = "ninja" },
 ]
 dev = [
+    { name = "aegisub-render", extra = ["video"] },
     { name = "basedpyright" },
     { name = "cython" },
     { name = "distlib" },
@@ -30,10 +35,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "av", specifier = ">=14" },
+    { name = "av", marker = "extra == 'video'", specifier = ">=14" },
     { name = "regex", specifier = ">=2024.11.6" },
     { name = "tqdm", specifier = ">=4.67" },
 ]
+provides-extras = ["video"]
 
 [package.metadata.requires-dev]
 build = [
@@ -42,6 +48,7 @@ build = [
     { name = "ninja", specifier = ">=1.11" },
 ]
 dev = [
+    { name = "aegisub-render", extras = ["video"] },
     { name = "basedpyright", specifier = ">=1.29" },
     { name = "cython", specifier = ">=3.3.0" },
     { name = "distlib", specifier = ">=0.3.9" },

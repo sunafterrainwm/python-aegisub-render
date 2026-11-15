@@ -1,5 +1,6 @@
 """End-to-end runs through the CLI and the worker process."""
 
+import argparse
 import json
 import shutil
 import subprocess
@@ -9,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from aegisub_render.cli import CommandRegistry
+from aegisub_render.runner import ExitCode
 from aegisub_render.settings import Settings
 from aegisub_render.video.probe import cache_path
 from aegisub_render.wsl import is_wsl
@@ -250,6 +253,56 @@ def test_list(tmp_path: Path, settings: Settings) -> None:
     r = cli("list", str(src))
     assert r.returncode == 0, r.stderr
     assert "Apply karaoke template" in r.stdout and "Karaoke template" in r.stdout
+
+
+def test_help_and_macro_listing() -> None:
+    """--help only lists existing macro names; 'aegisub-render macro' lists each macro's purpose."""
+    top = cli("--help")
+    assert top.returncode == 0, top.stderr
+    assert "(offset, measure)" in top.stdout
+    assert "shift subtitle times" not in top.stdout
+    assert "measure text extents" not in top.stdout
+
+    macro_bare = cli("macro")
+    assert macro_bare.returncode == 0, macro_bare.stderr
+    assert "offset" in macro_bare.stdout and "shift subtitle times" in macro_bare.stdout
+    assert "measure" in macro_bare.stdout and "measure text extents" in macro_bare.stdout
+
+    macro_help = cli("macro", "--help")
+    assert macro_help.returncode == 0, macro_help.stderr
+    assert macro_bare.stdout == macro_help.stdout
+
+
+def test_register_command() -> None:
+    """CommandRegistry.register_command supports both decorator and direct registration and dispatches via handler."""
+    reg = CommandRegistry()
+    seen: list[str] = []
+
+    @reg.register_command(
+        "alpha",
+        help="first command",
+        configure=lambda p: p.add_argument("value"),
+    )
+    def _alpha(args: argparse.Namespace, _settings: Settings) -> ExitCode:
+        seen.append(f"alpha:{args.value}")
+        return ExitCode.OK
+
+    reg.register_command(
+        "beta",
+        help=lambda: "second command",
+        configure=lambda p: p.add_argument("--flag", action="store_true"),
+        run=lambda args, _settings: (seen.append(f"beta:{args.flag}"), ExitCode.OK)[1],
+    )
+
+    assert reg.names() == ("alpha", "beta")
+    parser = argparse.ArgumentParser(prog="test")
+    reg.populate_subparsers(parser, dest="cmd", required=True)
+
+    ns1 = parser.parse_args(["alpha", "-2.5"])
+    assert ns1.handler(ns1, Settings()) is ExitCode.OK
+    ns2 = parser.parse_args(["beta", "--flag"])
+    assert ns2.handler(ns2, Settings()) is ExitCode.OK
+    assert seen == ["alpha:-2.5", "beta:True"]
 
 
 def test_offset_by_timestamp(tmp_path: Path) -> None:

@@ -43,6 +43,12 @@ class VideoContext:
     timecodes: Framerate = field(default_factory=Framerate)
     keyframes: list[int] = field(default_factory=list[int])
     warnings: list[str] = field(default_factory=list[str])
+    # What was actually opened (absolute, in the platform's preferred form), which is what
+    # update_relative_paths writes back into the project properties on save.
+    loaded_video: str = ""
+    loaded_audio: str = ""
+    loaded_timecodes: str = ""
+    loaded_keyframes: str = ""
 
 
 def parse_framerate(text: str) -> Framerate:
@@ -78,13 +84,15 @@ def _generic_relative(path: str, base: str) -> str:
     return "/".join(rel)
 
 
-def build_video_context(
-    ass: AssFile, paths: AegisubPaths, opts: VideoOptions, save_dir: str | None = None
-) -> VideoContext:
-    """`save_dir` is the directory the result will be saved in (default: the script's, ?script)."""
+def build_video_context(ass: AssFile, paths: AegisubPaths, opts: VideoOptions) -> VideoContext:
+    """Open what the project links to (video, timecodes, keyframes, audio) the way Aegisub does.
+
+    The project properties are updated the way loading does it (aspect ratio, video position);
+    rewriting the linked paths for a save belongs to update_relative_paths, which the caller
+    runs when it knows where the result is going.
+    """
     ctx = VideoContext()
     props = ass.properties
-    script_dir = paths.get("?script")
 
     def absolute(p: str) -> str:
         return paths.make_absolute(translate(p), "?script")  # under WSL, X:\\... is /mnt/x/...
@@ -109,7 +117,6 @@ def build_video_context(
     if audio and not exists(audio) and not is_dummy_path(audio):
         audio = ""
 
-    loaded_video = ""
     has_audio = False
     frame_count = 1
     if video:
@@ -131,8 +138,8 @@ def build_video_context(
                 ctx.keyframes = list(info.keyframes)
                 frame_count = max(1, len(info.timestamps))
             ctx.loaded = True
-            loaded_video = make_preferred(video)
-            paths.set_token("?video", loaded_video if not is_dummy_path(video) else "")
+            ctx.loaded_video = make_preferred(video)
+            paths.set_token("?video", ctx.loaded_video if not is_dummy_path(video) else "")
         except (OSError, ValueError, FramerateError) as e:
             ctx.warnings.append(f"aegisub-render: could not open video {video}: {e}\n")
 
@@ -150,7 +157,6 @@ def build_video_context(
         # VideoController::JumpToFrame clamps the stored position to the video
         props.video_position = max(0, min(props.video_position, frame_count - 1))
 
-    loaded_timecodes = ""
     if opts.fps is not None:
         try:
             ctx.timecodes = parse_framerate(opts.fps)
@@ -159,23 +165,22 @@ def build_video_context(
     elif timecodes:
         try:
             ctx.timecodes = Framerate.from_file(Path(timecodes))
-            loaded_timecodes = make_preferred(timecodes)
+            ctx.loaded_timecodes = make_preferred(timecodes)
         except (OSError, FramerateError) as e:
             ctx.warnings.append(f"aegisub-render: failed to parse timecodes file {timecodes}: {e}\n")
 
-    loaded_keyframes = ""
     if keyframes:
         try:
             ctx.keyframes = load_keyframes(Path(keyframes))
-            loaded_keyframes = make_preferred(keyframes)
+            ctx.loaded_keyframes = make_preferred(keyframes)
         except (OSError, KeyframeFormatError) as e:
             ctx.warnings.append(f"aegisub-render: failed to parse keyframes file {keyframes}: {e}\n")
 
-    loaded_audio = make_preferred(audio) if audio else ""
-    if not loaded_audio and loaded_video and opts.open_audio and has_audio:
-        loaded_audio = loaded_video
-    if loaded_audio:
-        paths.set_token("?audio", loaded_audio if not is_dummy_path(loaded_audio) else "")
+    ctx.loaded_audio = make_preferred(audio) if audio else ""
+    if not ctx.loaded_audio and ctx.loaded_video and opts.open_audio and has_audio:
+        ctx.loaded_audio = ctx.loaded_video
+    if ctx.loaded_audio:
+        paths.set_token("?audio", ctx.loaded_audio if not is_dummy_path(ctx.loaded_audio) else "")
 
     if opts.video_size is not None:
         ctx.loaded = True
@@ -183,7 +188,19 @@ def build_video_context(
         if ctx.ar_type == 0:
             ctx.ar_value = mid(0.5, ctx.width / ctx.height, 5.0)
 
-    # Project::SetSubtitlesFilename -> UpdateRelativePaths (on save, relative to where it is saved)
+    return ctx
+
+
+def update_relative_paths(ass: AssFile, ctx: VideoContext, paths: AegisubPaths, save_dir: str | None = None) -> None:
+    """Project::SetSubtitlesFilename -> UpdateRelativePaths: rewrite the project's linked paths
+    relative to where the file is about to be saved.
+
+    `save_dir` defaults to the subtitle file's own directory (?script), which is what saving in
+    place does. This is a write-time step, so it is the caller's to run -- ScriptRender does not
+    know where its result will end up.
+    """
+    props = ass.properties
+    script_dir = paths.get("?script")
     base = save_dir if save_dir is not None else script_dir
     same_dir = os.path.normcase(base) == os.path.normcase(script_dir)
 
@@ -195,10 +212,10 @@ def build_video_context(
         if not linked or same_dir or is_dummy_path(linked):
             return linked
         # a Windows drive path stays one (it is only translated to look for the file under WSL)
-        return _generic_relative(linked if PureWindowsPath(linked).drive else absolute(linked), base)
+        absolute = paths.make_absolute(translate(linked), "?script")
+        return _generic_relative(linked if PureWindowsPath(linked).drive else absolute, base)
 
-    props.audio_file = saved_path(loaded_audio, props.audio_file)
-    props.video_file = saved_path(loaded_video, props.video_file)
-    props.timecodes_file = saved_path(loaded_timecodes, props.timecodes_file)
-    props.keyframes_file = saved_path(loaded_keyframes, props.keyframes_file)
-    return ctx
+    props.audio_file = saved_path(ctx.loaded_audio, props.audio_file)
+    props.video_file = saved_path(ctx.loaded_video, props.video_file)
+    props.timecodes_file = saved_path(ctx.loaded_timecodes, props.timecodes_file)
+    props.keyframes_file = saved_path(ctx.loaded_keyframes, props.keyframes_file)

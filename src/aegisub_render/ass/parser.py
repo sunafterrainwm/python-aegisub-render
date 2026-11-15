@@ -74,6 +74,31 @@ def _process_property(props: ProjectProperties, key: str, value: str) -> bool:
 
 
 class AssParser:
+    """The line-by-line parser of src/ass_parser.cpp.
+
+    Everything it builds goes through the make_* hooks below, so a subclass can parse a file into
+    its own classes without touching the parsing itself::
+
+        class MyAssParser(AssParser):
+            @override
+            def make_attachment(self, data: str, group: Group) -> MyAssAttachment:
+                return MyAssAttachment(data, group)
+
+            @override
+            def make_dialogue(self, data: str) -> MyAssDialogue:
+                return MyAssDialogue.parse(data)  # AssDialogue.parse/AssStyle.parse use cls()
+
+            @classmethod
+            @override
+            def make_file(cls) -> MyAssFile:
+                return MyAssFile()
+
+        ass = parse_ass_text(text, parser_cls=MyAssParser)   # or AssFile.from_text(...)
+
+    parse_ass_lines / parse_ass_text / parse_ass_bytes / read_ass_file and the AssFile.from_*
+    constructors all take parser_cls, and make_file decides which AssFile they return.
+    """
+
     def __init__(self, target: AssFile, version: int) -> None:
         self.target = target
         self.version = version
@@ -83,8 +108,37 @@ class AssParser:
         self.attachment_data = ""
         self.in_header = True  # still in the comments that open [Script Info]
 
+    # -- the hooks: every entry this parser puts into the file is built here -------------------
+
+    @classmethod
+    def make_file(cls) -> AssFile:
+        """The (empty) file the entries are added to, for the parse_* functions."""
+        return AssFile()
+
+    def make_info(self, key: str, value: str) -> AssInfo:
+        """A `[Script Info]` key/value line that is not a project property."""
+        return AssInfo(key, value)
+
+    def make_style(self, data: str, version: int) -> AssStyle:
+        """A `Style:` line; version 0 is SSA (v4), 1 is ASS (v4+)."""
+        return AssStyle.parse(data, version)
+
+    def make_dialogue(self, data: str) -> AssDialogue:
+        """A `Dialogue:` or `Comment:` line."""
+        return AssDialogue.parse(data)
+
+    def make_attachment(self, data: str, group: Group) -> AssAttachment:
+        """A finished `[Fonts]`/`[Graphics]` attachment (its whole uuencoded block)."""
+        return AssAttachment(data, group)
+
+    def make_extradata(self, ident: int, key: str, value: str) -> ExtradataEntry:
+        """A decoded `[Aegisub Extradata]` entry."""
+        return ExtradataEntry(ident, key, value)
+
+    # -----------------------------------------------------------------------------------------
+
     def finish_attachment(self) -> None:
-        self.target.attachments.append(AssAttachment(self.attachment_data, self.attachment_group))
+        self.target.attachments.append(self.make_attachment(self.attachment_data, self.attachment_group))
         self.attachment_active = False
 
     def parse_attachment_line(self, data: str) -> None:
@@ -120,7 +174,7 @@ class AssParser:
         key = data[:pos]
         value = trim_left(data[pos + 1 :])
         if not _process_property(self.target.properties, key, value):
-            self.target.info.append(AssInfo(key, value))
+            self.target.info.append(self.make_info(key, value))
 
     def parse_metadata_line(self, raw: str) -> None:
         data = raw.replace("\0", "�")
@@ -131,11 +185,11 @@ class AssParser:
 
     def parse_event_line(self, data: str) -> None:
         if data.startswith(("Dialogue:", "Comment:")):
-            self.target.events.append(AssDialogue.parse(data))
+            self.target.events.append(self.make_dialogue(data))
 
     def parse_style_line(self, data: str) -> None:
         if data.startswith("Style:"):
-            self.target.styles.append(AssStyle.parse(data, self.version))
+            self.target.styles.append(self.make_style(data, self.version))
 
     def parse_font_line(self, data: str) -> None:
         if data.startswith("fontname: "):
@@ -167,7 +221,7 @@ class AssParser:
         else:
             value = ""
         self.target.next_extradata_id = max((ident + 1) & 0xFFFFFFFF, self.target.next_extradata_id)
-        self.target.extradata.append(ExtradataEntry(ident, key, value))
+        self.target.extradata.append(self.make_extradata(ident, key, value))
 
     def unknown_line(self, data: str) -> None:
         pass
@@ -206,6 +260,25 @@ class AssParser:
         self.state(data)
 
 
+def _trim_lines(lines: list[str]) -> list[str]:
+    """What agi::line_iterator hands AssParser: trimmed, and without a leading BOM."""
+    out: list[str] = []
+    for line in lines:
+        line = trim(line)
+        if line.startswith("﻿"):
+            line = line[1:]
+        out.append(line)
+    return out
+
+
+def split_subtitle_text(text: str) -> list[str]:
+    """Split already-decoded subtitle text into the lines AssParser sees.
+
+    The UTF-8 half of decode_subtitle_bytes: text that came in as str is taken as it is.
+    """
+    return _trim_lines([line.removesuffix("\r") for line in text.split("\n")])
+
+
 def decode_subtitle_bytes(raw: bytes) -> list[str]:
     """Decode and split into lines the way TextFileReader + agi::line_iterator do.
 
@@ -216,33 +289,37 @@ def decode_subtitle_bytes(raw: bytes) -> list[str]:
         codec = "utf-16-le" if raw.startswith(b"\xff\xfe") else "utf-16-be"
         text = raw[2:].decode(codec, "surrogatepass")
         text = from_bytes(text.encode("utf-8", "surrogatepass"))
-        lines = text.replace("\r", "").split("\n")
-    else:
-        try:
-            raw.decode("utf-8")
-        except UnicodeDecodeError as e:
-            raise UnsupportedEncodingError(
-                f"input is not valid UTF-8 (byte offset {e.start}); only UTF-8 and UTF-16 with BOM are supported"
-            ) from None
-        text = from_bytes(raw)
-        lines = [line.removesuffix("\r") for line in text.split("\n")]
-    out: list[str] = []
-    for line in lines:
-        line = trim(line)
-        if line.startswith("﻿"):
-            line = line[1:]
-        out.append(line)
-    return out
+        # UTF-16 goes through agi::charset::Convert, which drops every CR rather than only the
+        # one before a LF (kept as it is: the output of this tool has to match Aegisub's)
+        return _trim_lines(text.replace("\r", "").split("\n"))
+    try:
+        raw.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise UnsupportedEncodingError(
+            f"input is not valid UTF-8 (byte offset {e.start}); only UTF-8 and UTF-16 with BOM are supported"
+        ) from None
+    return split_subtitle_text(from_bytes(raw))
 
 
-def parse_ass_lines(lines: list[str], version: int = 1) -> AssFile:
-    target = AssFile()
-    parser = AssParser(target, version)
+def parse_ass_lines(lines: list[str], version: int = 1, parser_cls: type[AssParser] = AssParser) -> AssFile:
+    """Feed trimmed lines to parser_cls (an AssParser subclass may build its own classes)."""
+    target = parser_cls.make_file()
+    parser = parser_cls(target, version)
     for line in lines:
         parser.add_line(line)
     return target
 
 
-def read_ass_file(path: Path) -> AssFile:
+def parse_ass_text(text: str, version: int = 1, parser_cls: type[AssParser] = AssParser) -> AssFile:
+    """Parse already-decoded subtitle text (version 0 parses it as SSA, like a .ssa file)."""
+    return parse_ass_lines(split_subtitle_text(text), version, parser_cls)
+
+
+def parse_ass_bytes(raw: bytes, version: int = 1, parser_cls: type[AssParser] = AssParser) -> AssFile:
+    """Parse a .ass file's bytes: UTF-8 (BOM optional) or UTF-16 with a BOM."""
+    return parse_ass_lines(decode_subtitle_bytes(raw), version, parser_cls)
+
+
+def read_ass_file(path: Path, parser_cls: type[AssParser] = AssParser) -> AssFile:
     version = 0 if path.suffix.lower() == ".ssa" else 1
-    return parse_ass_lines(decode_subtitle_bytes(path.read_bytes()), version)
+    return parse_ass_bytes(path.read_bytes(), version, parser_cls)

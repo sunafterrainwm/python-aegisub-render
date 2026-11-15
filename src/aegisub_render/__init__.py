@@ -10,6 +10,28 @@ if hasattr(_os, "add_dll_directory") and (_dlls := _Path(__file__).with_name("_d
         if _line.strip() and _Path(_line.strip()).is_dir():
             _os.add_dll_directory(_line.strip())
 
+from aegisub_render.ass import (
+    AnyEntry,
+    AssAttachment,
+    AssDialogue,
+    AssFile,
+    AssInfo,
+    AssParser,
+    AssStyle,
+    Block,
+    BlockType,
+    Color,
+    ExtradataEntry,
+    Group,
+    KaraokeSyllable,
+    OverrideParam,
+    OverrideTag,
+    ParamClass,
+    ProjectProperties,
+    SubtitleFormatParseError,
+    UnsupportedEncodingError,
+    VarType,
+)
 from aegisub_render.macro import (
     CharMetrics,
     LayoutSpec,
@@ -28,12 +50,33 @@ from aegisub_render.macro import (
     shift_time_by_frames,
 )
 from aegisub_render.runner import ExitCode, RenderOptions, list_features, render
+from aegisub_render.script_render import (
+    RenderError,
+    ScriptCancelled,
+    ScriptError,
+    ScriptFailed,
+    ScriptRefused,
+    ScriptRender,
+)
 from aegisub_render.settings import Settings, load_settings
 from aegisub_render.video.context import VideoOptions
 
 __all__ = [
+    "AnyEntry",
+    "AssAttachment",
+    "AssDialogue",
+    "AssFile",
+    "AssInfo",
+    "AssParser",
+    "AssStyle",
+    "Block",
+    "BlockType",
     "CharMetrics",
+    "Color",
     "ExitCode",
+    "ExtradataEntry",
+    "Group",
+    "KaraokeSyllable",
     "LayoutSpec",
     "LinePosition",
     "MarginLayout",
@@ -41,9 +84,22 @@ __all__ = [
     "MeasureResult",
     "MeasureStyle",
     "Offset",
+    "OverrideParam",
+    "OverrideTag",
+    "ParamClass",
     "PosLayout",
+    "ProjectProperties",
+    "RenderError",
     "RenderOptions",
+    "ScriptCancelled",
+    "ScriptError",
+    "ScriptFailed",
+    "ScriptRefused",
+    "ScriptRender",
     "Settings",
+    "SubtitleFormatParseError",
+    "UnsupportedEncodingError",
+    "VarType",
     "VideoOptions",
     "list_features",
     "load_settings",

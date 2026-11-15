@@ -22,8 +22,53 @@ uv sync
 uv run aegisub-render.py render input.ass -o output.ass
 ```
 
-本專案不安裝成套件（`package = false`），從 repo 執行：`aegisub-render.py` 會把 repo 加進 `sys.path`，
-所以在任何工作目錄都能用；在 repo 根目錄也可以 `uv run python -m aegisub_render ...`。
+從 repo 執行：`aegisub-render.py` 會把 repo 的 `src/` 加進 `sys.path`，所以在任何工作目錄都能用；`uv sync` 之後
+repo 本身也以連結的方式裝進 `.venv`，所以 `uv run aegisub-render ...`、`uv run python -m aegisub_render ...`
+在任何工作目錄都可以用。
+
+### 在別的專案裡使用
+
+只支援「連結到這個 repo」的安裝方式（uv 的 editable install，會在對方環境放一個指向本 repo 的 `.pth`）：
+
+```powershell
+uv add --editable <repo>
+```
+
+之後 `import aegisub_render` 與 `aegisub-render` 指令都直接用 repo 裡的檔案，repo 更新即生效。
+要探測真的影片（`render` 讀專案的 Video File、`--video`）還需要 PyAV，它是 `video` extra：
+`uv add --editable "<repo>[video]"`。只借 `macro measure` / `macro offset`
+這類純 Python 功能的話不必裝（缺了只會在要開影片時以警告說明）。
+**不要**建置或發佈 wheel：`src/aegisub_render/**/*.pyd`、`*.so` 是 `native/build.py` 針對單一直譯器編好後
+commit 進 repo 的，不是安裝時才編譯，所以 wheel 的平台／ABI 標記會是錯的。純 `pip install` 沒有測試過。
+
+套件放在 `src/aegisub_render`（src layout），所以這個連結只讓 `aegisub_render` 這一個名稱進入對方專案，repo 根目錄的 `config.py` 之類的檔案不會變成可 import 的頂層模組。
+
+要注意的是：預設設定檔仍然是 **repo 根目錄的 `config.py`**（`src/aegisub_render/settings.py` 以套件位置
+往上兩層推算），要換成自己的就用 `--config PATH` 或環境變數 `AEGISUB_RENDER_CONFIG`。
+
+另外，VS Code 的 pyright／Pylance／basedpyright 擴充吃不到 uv editable 安裝放的 `.pth`（命令列的
+pyright 其實認得），所以要在 VS Code 開的 workspace 根目錄自己把本 repo 的 `src` 加進搜尋路徑，
+二選一（路徑都相對於那個根目錄）：
+
+```jsonc
+// .vscode/settings.json
+{
+  "python.analysis.extraPaths": ["../git/python-aegisub-render/src"],
+  "python.defaultInterpreterPath": ".venv/Scripts/python.exe"
+}
+```
+
+```json
+// pyrightconfig.json（命令列的 pyright 也讀得到，但它存在時 Pylance 會完全忽略 python.analysis.*）
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": ["../git/python-aegisub-render/src"]
+}
+```
+
+兩個都放只會讓 `python.analysis.*` 變成死設定，挑一個就好。寫在 `pyproject.toml` 的 `[tool.pyright]`
+不行 —— 實測 basedpyright 不讀那一節。
 
 ### aegisub-render.exe
 
@@ -96,7 +141,7 @@ uv run aegisub-render.py macro measure "測試文字" --ass in.ass --style Defau
 
 ### Python API
 
-repo 根目錄需要在 `sys.path` 上（例如在 repo 根目錄執行，或自行 `sys.path.insert`）：
+用上面的 `uv add --editable` 安裝，或讓 repo 的 `src/` 在 `sys.path` 上（例如 `aegisub-render.py` 的做法）：
 
 ```python
 from pathlib import Path
@@ -124,6 +169,126 @@ metrics = measure_text(
     MarginLayout(align=2, margin_l=10, margin_r=10, margin_v=20, res_x=1920, res_y=1080),
 )
 print(metrics.to_json())
+```
+
+要自己控制「跑腳本」這一步（而不是用 `render()` 連檔案一起處理）就用 `ScriptRender`：它吃一個
+記憶體裡的 `AssFile`，跑完**就地更新**它，序列化與寫檔都留給呼叫端。
+
+```python
+from pathlib import Path
+from aegisub_render import AssFile, ScriptRender, load_settings
+from aegisub_render.ass.writer import serialize_ass
+
+ass = AssFile.from_path(Path("song.ass"))
+with ScriptRender(ass, "kara-templater.lua", load_settings(), subtitle_path=Path("song.ass")) as sr:
+    if not sr.macro_can_run():  # 巨集的 validation 函式（Aegisub 會把選單變灰的那個）
+        raise RuntimeError(sr.refusal_reason())
+    sr.run()  # ass 被就地更新
+Path("song.fx.ass").write_bytes(serialize_ass(ass, sr.save_ui_state))
+```
+
+`macro_can_run()` 與 `run()` 共用同一個 Lua state（和 Aegisub 一樣）；`features()` 列出腳本註冊的巨集與
+濾鏡；`ScriptRefused`／`ScriptCancelled`／`ScriptFailed` 分別對應「沒跑」「腳本呼叫 `aegisub.cancel()`」
+「腳本失敗或超限」，`RenderError` 是連 Lua 都還沒開始就出錯（找不到腳本、Aegisub 安裝不對）。
+再跑一次 `run()` 等於在 Aegisub 裡再按一次巨集。
+
+`ass/` 的模型類別也都從套件根匯出（`AssFile`、`AssInfo`、`AssStyle`、`AssDialogue`、`AssAttachment`、
+`ExtradataEntry`、`ProjectProperties`、`Group`、`Color`、`KaraokeSyllable`、`OverrideTag`、`OverrideParam`、
+`Block`、`BlockType`、`VarType`、`ParamClass`、`SubtitleFormatParseError`、`UnsupportedEncodingError`），
+讀寫則掛在 `AssFile` 上（內部以執行期 import 呼叫 `ass.parser` / `ass.writer`，避免循環匯入）：
+
+```python
+from pathlib import Path
+from aegisub_render import AssFile
+
+ass = AssFile.from_path(Path("song.ass"))  # .ssa 會以 SSA（version 0）解析
+ass = AssFile.from_bytes(Path("song.ass").read_bytes())  # UTF-8（BOM 可有可無）或帶 BOM 的 UTF-16
+ass = AssFile.from_text(text, version=1)  # 已經解好碼的文字
+
+for line in ass.events:
+    line.text = line.text.replace("foo", "bar")
+
+Path("out.ass").write_bytes(ass.serialize())  # 像 Aegisub 存檔（UTF-8 BOM + CRLF）
+Path("out.ass").write_bytes(ass.export())  # 像 File → Export
+```
+
+`serialize()` / `export()` 的參數與 `ass.writer.serialize_ass` / `serialize_export` 相同
+（`save_ui_state`、`keep_brand`）；更低階的 `parse_ass_lines`、`decode_subtitle_bytes`、
+`split_subtitle_text`、`write_ass_file` 等仍在 `aegisub_render.ass` 裡。
+
+#### 解析成自己的類別
+
+`AssParser` 建立的每一個物件都經過一個 `make_*` 掛鉤，所以**不用改解析邏輯**就能換掉結果的類別：
+
+```python
+from typing import override
+from aegisub_render import AssAttachment, AssDialogue, AssFile, AssParser, Group
+
+
+class MyAssAttachment(AssAttachment): ...
+
+
+class MyAssDialogue(AssDialogue): ...
+
+
+class MyAssFile(AssFile): ...
+
+
+class MyAssParser(AssParser):
+    @classmethod
+    @override
+    def make_file(cls) -> MyAssFile:  # 整份檔案
+        return MyAssFile()
+
+    @override
+    def make_attachment(self, data: str, group: Group) -> MyAssAttachment:
+        return MyAssAttachment(data, group)
+
+    @override
+    def make_dialogue(self, data: str) -> MyAssDialogue:
+        return MyAssDialogue.parse(data)  # .parse 是 classmethod，會回傳 cls()
+
+
+ass = AssFile.from_path(Path("song.ass"), parser_cls=MyAssParser)
+assert type(ass) is MyAssFile and type(ass.events[0]) is MyAssDialogue
+```
+
+掛鉤共六個：`make_file`（classmethod）、`make_info`、`make_style(data, version)`、`make_dialogue`、
+`make_attachment(data, group)`、`make_extradata(id, key, value)`；只覆寫要換的那幾個就好。
+`parser_cls` 可以傳給 `AssFile.from_text` / `from_bytes` / `from_path` 與
+`parse_ass_text` / `parse_ass_bytes` / `parse_ass_lines` / `read_ass_file`，不傳就是原本的類別。
+`AssStyle.parse` 與 `AssDialogue.parse` 是 classmethod（用 `cls(...)` 建物件），所以子類別直接呼叫
+`.parse()` 就會得到自己的型別；`AssInfo.copy()` 同理。這些模型類別都是 dataclass，其中 `AssStyle`
+與 `AssDialogue` 是 `kw_only=True`（欄位全都有預設值，`AssStyle()`／`AssDialogue()` 仍可直接建），
+所以子類別新增的欄位也要有預設值，`.parse()` 才建得起來。
+
+#### 其他 Aegisub 有的操作
+
+```python
+line.get_stripped_text()  # AssDialogue::GetStrippedText：只留 plain 區塊
+line.strip_tags()  # AssDialogue::StripTags：把 Text 換成上面的結果
+line.copy()  # 複製一行（像 Aegisub 的 copy ctor，id 是新的）
+style.copy()  # 複製一個樣式
+ass.copy()  # 複製整份檔案（events 會拿到新的 id）
+ssa_to_ass_alignment(5)  # SSA 的對齊編號 → \an 的 1-9（舊式 \a 也是這套編號）
+```
+
+解析覆寫標籤有兩種切法：預設照 Aegisub（`ParseTags` 的 `depth` 只在 depth 0 加一，所以 kara-templater
+寫的 `\t(0,248,\clip(...)\t(...))` 會被切成兩個 `\t`，接回去不是原字串 —— 細節與理由見
+[docs/DESIGN.md](docs/DESIGN.md)），`parse_override_tags(text, strict=True)` 則真的計算括號，
+一個 `\t` 就是一個 tag、`str(tag)` 接回去等於原字串（重排、重組自己的行就用這個）。
+`set_strict_tag_parsing(True)` 把整個行程的預設換成後者（回傳舊值），`strict_tag_parsing()` 讀目前值；
+渲染流程請保持預設。
+
+`get_stripped_text()` 剝掉 `{}`（override 與 comment 區塊）與繪圖區塊，但 `\N`、`\n`、`\h`
+**照原樣留著**（它們在 Aegisub 眼裡就是 plain 區塊裡的兩個字元，GetStrippedText 不動它們）——
+要換成換行是呼叫端自己的規則，不是 Aegisub 的行為。
+
+寫出的位元組固定是 UTF-8 BOM + CRLF（這是本工具的目標：和 Aegisub 存檔逐位元組相同）。
+需要別的慣例就在呼叫端轉：
+
+```python
+Path("out.ass").write_bytes(ass.serialize().decode("utf-8-sig").replace("\r\n", "\n").encode("utf-8"))
 ```
 
 ## 設定（`config.py`）
@@ -167,9 +332,10 @@ print(metrics.to_json())
 
 ## 資源限制
 
-Lua 在獨立的 worker 行程中執行：
+Lua 在獨立的 worker 行程中執行（一個 `ScriptRender` 開一個，載入腳本後常駐，直到它被關閉）：
 
 - 時間：主行程在 `TIMEOUT_SECONDS` 後直接結束 worker（對 JIT 編譯的迴圈、卡在 C 函式裡的情況同樣有效）。
+  這個上限是每個請求各自計算的（驗證、執行各算一次）。
 - 記憶體：自訂 allocator 限制 Lua heap（含 `ffi.new` 的 cdata，不含 `ffi.C.malloc`）。注意尚未回收的垃圾也算在內。
 - 行數：腳本 append/insert 的行數、輸入檔行數。
 
@@ -216,7 +382,7 @@ uv run --group build python native/build.py                            # 換回 
 `--msys2` 以該環境的 gcc、pkg-config、fontconfig 與 HarfBuzz 編譯 Linux 分支（meson 選項 `branch=linux`：`_font`
 由 `_font.fcft.pyx` 編出），模組仍是給本專案的 Python 用，builddir 是 `native/builddir-msys2-<環境>`。編出的 `.pyd`
 與 commit 的 MSVC 版同名，會取代它們（一般建置或 `git checkout` 即可換回）；它們要載入該環境的 DLL，所以
-`build.py` 把該環境的 `bin` 寫進 `aegisub_render/_dll_dirs.txt`（不 commit），`aegisub_render/__init__.py` 以
+`build.py` 把該環境的 `bin` 寫進 `src/aegisub_render/_dll_dirs.txt`（不 commit），`src/aegisub_render/__init__.py` 以
 `os.add_dll_directory` 載入，一般建置會刪掉這個檔案。MSYS2 的 fontconfig 會看到 `C:\Windows\Fonts`。
 C 函式庫仍是 UCRT（`long` 32 位元），所以 `_crt` 的結果與 MSVC 版相同。
 
@@ -246,9 +412,9 @@ uv run ruff check
 
 | 模組 | 內容 |
 |---|---|
-| `aegisub_render/lua/_luajit`（`.pyx` / `.pxd` / `.pyi`） | 靜態連結的 LuaJIT + lpeg + luabins + shim，以及 Python 綁定：`LuaState`、把 Python 函式變成 Lua C 函式的 dispatcher、`aegisub.re/unicode/lfs` 背後的 C 函式表 |
-| `aegisub_render/host/_font`（`_font.gdi.pyx` / `_font.fcft.pyx`，`.pxi`，一份 `_font.pyi`） | `text_extents` 的量測，同一個模組名稱、依平台分支從兩份原始碼之一編譯：Windows 分支用 GDI（以選中字型的 `name` 表判斷是否被替換，因為 `GetTextFace` 只給使用者語言的名稱），Linux 分支用 fontconfig + HarfBuzz。兩份的函式、簽名與 docstring 相同，`_font.backend()` 回報是哪一份 |
-| `aegisub_render/_crt`（`.pyx` / `.pyi`） | Aegisub 依賴的 C 行為：`atoi`、`strtol`、`printf("%g"/"%f")`、double→整數的 C 轉型、int64 除法。直接用 MSVC UCRT 計算，而不是用 Python 模擬（例如 `atoi` 溢位時夾到 `INT_MAX`、`strtol` 接受 `0x`、`inf`/`nan` 的寫法） |
+| `src/aegisub_render/lua/_luajit`（`.pyx` / `.pxd` / `.pyi`） | 靜態連結的 LuaJIT + lpeg + luabins + shim，以及 Python 綁定：`LuaState`、把 Python 函式變成 Lua C 函式的 dispatcher、`aegisub.re/unicode/lfs` 背後的 C 函式表 |
+| `src/aegisub_render/host/_font`（`_font.gdi.pyx` / `_font.fcft.pyx`，`.pxi`，一份 `_font.pyi`） | `text_extents` 的量測，同一個模組名稱、依平台分支從兩份原始碼之一編譯：Windows 分支用 GDI（以選中字型的 `name` 表判斷是否被替換，因為 `GetTextFace` 只給使用者語言的名稱），Linux 分支用 fontconfig + HarfBuzz。兩份的函式、簽名與 docstring 相同，`_font.backend()` 回報是哪一份 |
+| `src/aegisub_render/_crt`（`.pyx` / `.pyi`） | Aegisub 依賴的 C 行為：`atoi`、`strtol`、`printf("%g"/"%f")`、double→整數的 C 轉型、int64 除法。直接用 MSVC UCRT 計算，而不是用 Python 模擬（例如 `atoi` 溢位時夾到 `INT_MAX`、`strtol` 接受 `0x`、`inf`/`nan` 的寫法） |
 
 `.pxd` 是 C 宣告（LuaJIT API、shim、windows.h）。`.pyi` 是編譯時產生的：Cython 本身不會產生 stub，
 但 `.pyx` 開了 `embedsignature.format=python`，會把原始碼裡帶型別註解的簽名嵌進 docstring；
@@ -299,6 +465,8 @@ LuaJIT 官方不提供二進位檔，其他來源（MSYS2、conda-forge）的版
 - `aegisub.re` 以 Python `regex` 模擬 boost::u32regex（perl 語法、預設多行與 `.` 匹配換行）；罕見語法可能有差異。
 - 影片旋轉中繼資料（FFMS2 會交換寬高）未處理。
 - `Scroll Position` 等 GUI 狀態沿用輸入檔的值（在 Aegisub 裡存檔時會是當下的 GUI 狀態）。
+- `AssFile.copy()` 連 `properties` 與 `header_comments` 一起複製；Aegisub 的 copy constructor
+  沒有複製 `Properties`（它會是預設值），那對「我要這份檔案的副本」的呼叫端沒有用。
 - 刻意保留 3.5.x 的行為：`subs.delete(a, b, c)` 只刪除最後一個參數指定的行、`subs[i] = nil` 會報錯、
   `lfs.attributes(...).modification` 是自 1601 年起算的秒數。
 - 錯誤訊息的位置：Aegisub 以 `agi::lua::error()` 丟出的錯誤會加上呼叫端位置（`luaL_where(L, 1)`），

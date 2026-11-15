@@ -1,13 +1,43 @@
 """ASS model, parser and writer (ports of Aegisub's C++)."""
 
+from dataclasses import dataclass
+from pathlib import Path
+from typing import override
+
 import pytest
 
 from aegisub_render.ass.codec import inline_string_decode, inline_string_encode, uudecode, uuencode
 from aegisub_render.ass.color import Color
-from aegisub_render.ass.entries import AssDialogue, AssStyle, SubtitleFormatParseError
+from aegisub_render.ass.entries import (
+    AssAttachment,
+    AssDialogue,
+    AssInfo,
+    AssStyle,
+    ExtradataEntry,
+    Group,
+    SubtitleFormatParseError,
+    ssa_to_ass_alignment,
+)
+from aegisub_render.ass.file import AssFile
 from aegisub_render.ass.karaoke import parse_karaoke_syllables
-from aegisub_render.ass.override import OverrideTag
-from aegisub_render.ass.parser import decode_subtitle_bytes, parse_ass_lines
+from aegisub_render.ass.override import (
+    BlockType,
+    OverrideTag,
+    parse_dialogue_blocks,
+    parse_override_tags,
+    set_strict_tag_parsing,
+    strict_tag_parsing,
+)
+from aegisub_render.ass.parser import (
+    AssParser,
+    UnsupportedEncodingError,
+    decode_subtitle_bytes,
+    parse_ass_bytes,
+    parse_ass_lines,
+    parse_ass_text,
+    read_ass_file,
+    split_subtitle_text,
+)
 from aegisub_render.ass.time import ass_formatted, parse_time, time_int
 from aegisub_render.ass.writer import header_lines, serialize_ass, serialize_export
 
@@ -253,3 +283,355 @@ def test_header_with_keep_brand() -> None:
         assert header_lines(ass, keep_brand=True) == comments
         out = serialize_ass(ass, keep_brand=True).decode("utf-8-sig").split("\r\n")
         assert out[: len(comments) + 2] == ["[Script Info]", *comments, "Title: x"]
+
+
+def test_ass_file_len_iter() -> None:
+    events = [AssDialogue(text=str(i)) for i in range(100)]
+    ass = AssFile(events=events)
+    assert len(ass) == 100
+    for i, ev in enumerate(ass):
+        assert ev == events[i]
+
+
+def test_assfile_constructors_and_serializers() -> None:
+    """AssFile.from_text / from_bytes / serialize / export do the same as the parser and writer
+    functions they import at run time."""
+    text = "\n".join(
+        [
+            "[Script Info]",
+            "Title: x",
+            "ScriptType: v4.00+",
+            "",
+            "[Events]",
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+            "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,hello",
+        ]
+    )
+    expected = parse_ass_lines(decode_subtitle_bytes(text.encode("utf-8")))
+
+    from_text = AssFile.from_text(text)
+    assert from_text.serialize() == serialize_ass(expected)
+    assert from_text.export() == serialize_export(expected)
+    assert from_text.serialize(save_ui_state=False) == serialize_ass(expected, save_ui_state=False)
+    assert from_text.events[0].text == "hello"
+
+    # CRLF, a BOM and trailing blanks change nothing (the lines are trimmed)
+    crlf = "﻿" + text.replace("\n", "   \r\n")
+    assert AssFile.from_text(crlf).serialize() == from_text.serialize()
+
+    data = from_text.serialize()
+    assert AssFile.from_bytes(data).serialize() == data
+    utf16 = b"\xff\xfe" + data.decode("utf-8-sig").encode("utf-16-le")
+    assert AssFile.from_bytes(utf16).serialize() == data
+    with pytest.raises(UnsupportedEncodingError):
+        AssFile.from_bytes(b"[Script Info]\r\nTitle: \xff\xfe\xff")
+
+    # the version argument reaches the parser (read_ass_file passes 0 for a .ssa file)
+    for version in (0, 1):
+        assert AssFile.from_text(text, version).serialize() == serialize_ass(
+            parse_ass_lines(split_subtitle_text(text), version)
+        )
+        assert AssFile.from_bytes(data, version).serialize() == serialize_ass(
+            parse_ass_lines(decode_subtitle_bytes(data), version)
+        )
+
+
+def test_assfile_from_path(tmp_path: Path) -> None:
+    ass = AssFile.from_text("[Script Info]\nTitle: x\n")
+    p = tmp_path / "x.ass"
+    p.write_bytes(ass.serialize())
+    assert AssFile.from_path(p).get_script_info("Title") == "x"
+    assert AssFile.from_path(p).serialize() == ass.serialize()
+
+
+def test_top_level_exports() -> None:
+    """The model classes are reachable from the package root (aegisub_render.AssFile)."""
+    import aegisub_render
+    import aegisub_render.ass
+
+    names = [
+        "AssAttachment",
+        "AssDialogue",
+        "AssFile",
+        "AssInfo",
+        "AssStyle",
+        "Block",
+        "BlockType",
+        "Color",
+        "ExtradataEntry",
+        "Group",
+        "KaraokeSyllable",
+        "OverrideParam",
+        "OverrideTag",
+        "ParamClass",
+        "ProjectProperties",
+        "SubtitleFormatParseError",
+        "UnsupportedEncodingError",
+        "VarType",
+    ]
+    for name in names:
+        assert name in aegisub_render.__all__, name
+        assert getattr(aegisub_render, name) is getattr(aegisub_render.ass, name), name
+    assert aegisub_render.AssFile is AssFile
+
+
+class _MyInfo(AssInfo):
+    __slots__ = ()
+
+
+class _MyStyle(AssStyle):
+    __slots__ = ()
+
+
+class _MyDialogue(AssDialogue):
+    __slots__ = ()
+
+
+class _MyAttachment(AssAttachment):
+    __slots__ = ()
+
+
+@dataclass(slots=True)
+class _MyExtradata(ExtradataEntry):
+    pass
+
+
+class _MyAssFile(AssFile):
+    __slots__ = ()
+
+
+class _MyParser(AssParser):
+    """Parses into the subclasses above, without touching any of the parsing."""
+
+    @classmethod
+    @override
+    def make_file(cls) -> _MyAssFile:
+        return _MyAssFile()
+
+    @override
+    def make_info(self, key: str, value: str) -> _MyInfo:
+        return _MyInfo(key, value)
+
+    @override
+    def make_style(self, data: str, version: int) -> _MyStyle:
+        return _MyStyle.parse(data, version)
+
+    @override
+    def make_dialogue(self, data: str) -> _MyDialogue:
+        return _MyDialogue.parse(data)
+
+    @override
+    def make_attachment(self, data: str, group: Group) -> _MyAttachment:
+        return _MyAttachment(data, group)
+
+    @override
+    def make_extradata(self, ident: int, key: str, value: str) -> _MyExtradata:
+        return _MyExtradata(ident, key, value)
+
+
+_SUBCLASS_TEXT = "\n".join(
+    [
+        "[Script Info]",
+        "Title: x",
+        "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold,"
+        " Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow,"
+        " Alignment, MarginL, MarginR, MarginV, Encoding",
+        "Style: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1",
+        "",
+        "[Fonts]",
+        "fontname: a_0.ttf",
+        "!!!!!%),2E#",
+        "",
+        "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+        "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,hello",
+        "",
+        "[Aegisub Extradata]",
+        "Data: 1,key,evalue",
+    ]
+)
+
+
+def test_parser_subclass_builds_its_own_classes() -> None:
+    """A parser subclass decides every class the result is made of, via the make_* hooks."""
+    ass = parse_ass_text(_SUBCLASS_TEXT, parser_cls=_MyParser)
+    assert type(ass) is _MyAssFile
+    assert [type(e) for e in ass.info] == [_MyInfo]
+    assert [type(e) for e in ass.styles] == [_MyStyle]
+    assert [type(e) for e in ass.events] == [_MyDialogue]
+    assert [type(e) for e in ass.attachments] == [_MyAttachment]
+    assert [type(e) for e in ass.extradata] == [_MyExtradata]
+    assert ass.styles[0].name == "Default" and ass.events[0].text == "hello"
+    assert ass.attachments[0].filename == "a_0.ttf" and ass.extradata[0].value == "value"
+
+    # the parsing itself is unchanged: same bytes out as the plain parser (serialize() runs
+    # clean_extradata, which drops the entry no event refers to, so it comes after the checks)
+    plain = parse_ass_text(_SUBCLASS_TEXT)
+    assert ass.serialize() == plain.serialize()
+
+    # the same class reaches every entry point
+    assert type(AssFile.from_text(_SUBCLASS_TEXT, parser_cls=_MyParser)) is _MyAssFile
+    data = plain.serialize()
+    assert type(AssFile.from_bytes(data, parser_cls=_MyParser)) is _MyAssFile
+    assert type(parse_ass_bytes(data, parser_cls=_MyParser)) is _MyAssFile
+    assert type(parse_ass_lines(split_subtitle_text(_SUBCLASS_TEXT), parser_cls=_MyParser)) is _MyAssFile
+    # ... and without it the plain classes are used
+    assert type(AssFile.from_text(_SUBCLASS_TEXT)) is AssFile
+
+
+def test_parser_subclass_from_path(tmp_path: Path) -> None:
+    p = tmp_path / "x.ass"
+    p.write_bytes(parse_ass_text(_SUBCLASS_TEXT).serialize())
+    assert type(AssFile.from_path(p, parser_cls=_MyParser)) is _MyAssFile
+    assert type(read_ass_file(p, _MyParser).events[0]) is _MyDialogue
+
+
+def test_entry_parse_uses_cls() -> None:
+    """AssStyle.parse / AssDialogue.parse are classmethods, so a subclass parses into itself."""
+    line = "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,hello"
+    assert type(_MyDialogue.parse(line)) is _MyDialogue
+    assert type(AssDialogue.parse(line)) is AssDialogue
+    assert _MyDialogue.parse(line).entry_data() == AssDialogue.parse(line).entry_data()
+    assert type(AssInfo("a", "b").copy()) is AssInfo
+    assert type(_MyInfo("a", "b").copy()) is _MyInfo
+
+
+_STRIPPED_LINE = (
+    r"Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,{\an8\t(0,248,\clip(1,2,3,4)}hi\Nthere"
+    r"{a comment}{\p1}m 0 0 l 5 5{\p0}end"
+)
+
+
+def test_get_stripped_text() -> None:
+    """AssDialogue::GetStrippedText: only the plain blocks, so no tags, no comment blocks and no
+    drawings; \\N and friends stay as the two characters they are in the text."""
+    d = AssDialogue.parse(_STRIPPED_LINE)
+    assert d.get_stripped_text() == r"hi\Nthereend"
+    before = d.entry_data()
+    d.strip_tags()
+    assert d.text == r"hi\Nthereend"
+    assert d.entry_data() != before
+    assert d.strip_tags() is None and d.text == r"hi\Nthereend"  # idempotent
+
+    # an empty line and a line that is only tags
+    assert AssDialogue.parse("Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,").get_stripped_text() == ""
+    assert AssDialogue.parse(r"Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,{\b1}").get_stripped_text() == ""
+
+
+def test_copy_gives_new_ids() -> None:
+    """AssDialogue's copy constructor hands out a new Id; AssFile's clones its events."""
+    ass = AssFile.from_text("\n".join(["[Events]", "Format: Layer, Start, End, Text", _STRIPPED_LINE]))
+    line = ass.events[0]
+    clone = line.copy()
+    assert clone is not line and clone.id != line.id
+    assert clone.text == line.text and clone.margin == line.margin and clone.margin is not line.margin
+
+    other = ass.copy()
+    assert other.serialize() == ass.serialize()
+    assert [e.id for e in other.events] != [e.id for e in ass.events]
+    other.events[0].text = "changed"
+    other.events[0].margin[0] = 99
+    other.info.append(AssInfo("Title", "y"))
+    assert ass.events[0].text != "changed" and ass.events[0].margin[0] == 0
+    assert [i.key for i in ass.info] == []
+    # unlike Aegisub's copy constructor, the properties and the header comments come along
+    ass.properties.video_file = "v.mkv"
+    assert ass.copy().properties.video_file == "v.mkv"
+
+    style = AssStyle()
+    style.name = "s"
+    assert style.copy() is not style and style.copy().name == "s"
+
+
+def test_ssa_to_ass_alignment() -> None:
+    """AssStyle::Parse's SSA table, which the legacy \\a tag uses too."""
+    assert [ssa_to_ass_alignment(n) for n in (1, 2, 3, 5, 6, 7, 9, 10, 11)] == [1, 2, 3, 7, 8, 9, 4, 5, 6]
+    assert [ssa_to_ass_alignment(n) for n in (0, 4, 8, 12, -1)] == [2, 2, 2, 2, 2]
+    # what a v4 (SSA) style line parses to, which is where the table comes from: 18 fields,
+    # alignment 5 (top left in SSA) is 7 in an \an
+    v4 = "Style: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00FF0000,&H00000000,-1,0,1,2,2,5,10,10,10,0,1"
+    assert AssStyle.parse(v4, version=0).alignment == ssa_to_ass_alignment(5) == 7
+
+
+def test_parse_override_tags_nested_transform() -> None:
+    r"""ParseTags' depth only rises on a `(` seen at depth 0, so a \t with tags in its parameters
+    is split in the middle and str(tag) does not join back into the input text.
+
+    Faithful to AssDialogueBlockOverride::ParseTags + AssOverrideTag::operator std::string();
+    pinned here because it looks like a bug and must not be "fixed" into real bracket counting.
+    Aegisub writes Text back verbatim unless a line was edited, which is why files survive it.
+    """
+    text = r"\t(0,248,\clip(690,0,1230,1080)\t(586,922,\clip(1230,0,1230,1080)))"
+    tags = parse_override_tags(text)
+    assert [t.name for t in tags] == [r"\t", r"\t"]
+    assert str(tags[0]) == r"\t(0,248,\clip(690,0,1230,1080))"
+    assert str(tags[1]) == r"\t(586,922,\clip(1230,0,1230,1080),))"
+    assert "".join(str(t) for t in tags) != text
+    # the parameters are shifted too: an empty accel in the first half, a stray ')' in the second
+    assert [p.value for p in tags[0].params] == ["0", "248", "", r"\clip(690,0,1230,1080)"]
+    assert [p.value for p in tags[1].params] == ["586", "922", r"\clip(1230,0,1230,1080)", ")"]
+
+    # the block itself keeps the text exactly, so saving an unedited line is byte-identical
+    blocks = parse_dialogue_blocks("{" + text + "}hi")
+    assert [b.text for b in blocks] == [text, "hi"]
+    assert [b.type for b in blocks] == [BlockType.OVERRIDE, BlockType.PLAIN]
+
+    # one level of parentheses is fine, which is every tag Aegisub's own UI writes
+    simple = r"\t(0,248,\fscx120)\fscy120"
+    assert "".join(str(t) for t in parse_override_tags(simple)) == simple
+
+
+_NESTED_T = r"\t(0,248,\clip(690,0,1230,1080)\t(586,922,\clip(1230,0,1230,1080)))"
+
+
+def test_strict_tag_parsing_counts_brackets() -> None:
+    r"""strict=True keeps a \t with tags in its parameters in one piece, and str(tag) then joins
+    back into the input text -- what a caller rebuilding a line of its own wants."""
+    tags = parse_override_tags(_NESTED_T, strict=True)
+    assert [t.name for t in tags] == [r"\t"]
+    assert str(tags[0]) == _NESTED_T
+    assert "".join(str(t) for t in tags) == _NESTED_T
+    # the nested animation is the last parameter instead of being cut in half
+    assert [p.value for p in tags[0].params] == [
+        "0",
+        "248",
+        "",
+        r"\clip(690,0,1230,1080)\t(586,922,\clip(1230,0,1230,1080))",
+    ]
+
+    # a block parses with it too, and the default (Aegisub) still gives two tags
+    assert len(parse_dialogue_blocks("{" + _NESTED_T + "}hi", strict=True)[0].tags) == 1
+    assert len(parse_dialogue_blocks("{" + _NESTED_T + "}hi")[0].tags) == 2
+
+    # one level of parentheses parses the same either way
+    simple = r"\an8\pos(10,20)\t(0,248,\fscx120)\clip(m 0 0 l 5 5)"
+    assert [str(t) for t in parse_override_tags(simple, strict=True)] == [
+        str(t) for t in parse_override_tags(simple, strict=False)
+    ]
+
+    # strict fixes the splitting, not the normalisation: a missing ')' in the input is still
+    # closed by AssOverrideTag::operator std::string()
+    unbalanced = r"\t(0,248,\clip(690,0,1230,1080)"
+    assert str(parse_override_tags(unbalanced, strict=True)[0]) == unbalanced + ")"
+
+
+def test_set_strict_tag_parsing_switches_the_default() -> None:
+    """The process-wide switch changes what callers that pass no strict= get, and an explicit
+    strict= still wins."""
+    assert strict_tag_parsing() is False  # Aegisub's behaviour is the default
+    previous = set_strict_tag_parsing(True)
+    try:
+        assert previous is False
+        assert strict_tag_parsing() is True
+        assert len(parse_override_tags(_NESTED_T)) == 1
+        assert len(parse_dialogue_blocks("{" + _NESTED_T + "}hi")[0].tags) == 1
+        assert len(parse_override_tags(_NESTED_T, strict=False)) == 2
+        # it reaches the model classes as well
+        line = AssDialogue.parse(r"Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,{" + _NESTED_T + r"}hi\Nthere")
+        assert line.get_stripped_text() == r"hi\Nthere"
+    finally:
+        assert set_strict_tag_parsing(previous) is True
+    assert strict_tag_parsing() is False
+    assert len(parse_override_tags(_NESTED_T)) == 2

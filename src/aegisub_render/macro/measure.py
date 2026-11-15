@@ -1,6 +1,7 @@
 """Measure text dimensions, glyph ink padding, per-character positions, and karaskel-style layout
 without starting Aegisub."""
 
+import argparse
 import json
 import sys
 from dataclasses import dataclass, field
@@ -9,9 +10,13 @@ from typing import Literal
 
 from aegisub_render.ass.entries import AssStyle, SubtitleFormatParseError
 from aegisub_render.ass.parser import UnsupportedEncodingError, read_ass_file
+from aegisub_render.cli import add_override_args, may_replace, parse_output, parse_size
 from aegisub_render.host.text_extents import TextExtents, register_private_fonts
+from aegisub_render.macro import register_command
 from aegisub_render.output import Output
 from aegisub_render.runner import STDOUT, ExitCode
+from aegisub_render.settings import Settings
+from aegisub_render.wsl import translate_path
 
 
 class MeasureError(Exception):
@@ -53,21 +58,20 @@ class MeasureStyle:
         )
 
     def to_ass_style(self) -> AssStyle:
-        s = AssStyle()
-        s.font = self.font
-        s.fontsize = self.fontsize
-        s.bold = bool(self.bold)  # an AssStyle only holds a bool; measure_text passes the weight
-        s.italic = self.italic
-        s.underline = self.underline
-        s.strikeout = self.strikeout
-        s.scalex = self.scalex
-        s.scaley = self.scaley
-        s.spacing = self.spacing
-        s.encoding = self.encoding
-        s.outline_w = self.outline
-        s.shadow_w = self.shadow
-        s.update_data()
-        return s
+        return AssStyle(
+            font=self.font,
+            fontsize=self.fontsize,
+            bold=bool(self.bold),  # an AssStyle only holds a bool; measure_text passes the weight
+            italic=self.italic,
+            underline=self.underline,
+            strikeout=self.strikeout,
+            scalex=self.scalex,
+            scaley=self.scaley,
+            spacing=self.spacing,
+            encoding=self.encoding,
+            outline_w=self.outline,
+            shadow_w=self.shadow,
+        )
 
 
 @dataclass(slots=True)
@@ -562,6 +566,214 @@ def measure(
     return ExitCode.OK
 
 
+def parse_pos(spec: str) -> tuple[float, float]:
+    parts = spec.split(",")
+    if len(parts) != 2:
+        raise argparse.ArgumentTypeError(f"bad pos {spec!r} (expected X,Y)")
+    try:
+        return float(parts[0].strip()), float(parts[1].strip())
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"bad pos {spec!r} (expected X,Y)") from None
+
+
+def parse_margins(spec: str) -> tuple[int, int, int]:
+    parts = spec.split(",")
+    if len(parts) != 3:
+        raise argparse.ArgumentTypeError(f"bad margins {spec!r} (expected L,R,V)")
+    try:
+        return int(parts[0].strip()), int(parts[1].strip()), int(parts[2].strip())
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"bad margins {spec!r} (expected L,R,V integers)") from None
+
+
+def _configure_measure(p: argparse.ArgumentParser) -> None:
+    p.add_argument("text", help="text string to measure")
+    p.add_argument(
+        "--config",
+        type=translate_path,
+        help="config file (default: AEGISUB_RENDER_CONFIG or the repository's config.py)",
+    )
+    p.add_argument(
+        "--font-dir", type=translate_path, action="append", default=[], help="extra font directory (repeatable)"
+    )
+    p.add_argument("-q", "--quiet", action="store_true", help="only print errors")
+    p.add_argument(
+        "-o",
+        "--output",
+        type=parse_output,
+        default=STDOUT,
+        help="output JSON file, or - for stdout (default: -)",
+    )
+    add_override_args(p)
+
+    style_grp = p.add_argument_group("style")
+    style_grp.add_argument("--ass", type=translate_path, help="load base style and resolution from an .ass/.ssa file")
+    style_grp.add_argument("--style", default="Default", help="style name in --ass (default: Default)")
+    style_grp.add_argument("--font", help="font family name (required unless --ass is given)")
+    style_grp.add_argument("--fontsize", type=float, help="font size in points/pixels (required unless --ass is given)")
+    bold = style_grp.add_mutually_exclusive_group()
+    bold.add_argument(
+        "--bold",
+        type=int,
+        nargs="?",
+        const=1,
+        default=None,
+        metavar="N",
+        help="bold, read like libass reads \\bN: 1 (the default) is bold, 0 is normal, 100..900 is a weight",
+    )
+    bold.add_argument("--no-bold", dest="bold", action="store_const", const=0, help="not bold (--bold 0)")
+    style_grp.add_argument(
+        "--italic", action=argparse.BooleanOptionalAction, default=None, help="italic style (--italic / --no-italic)"
+    )
+    style_grp.add_argument(
+        "--underline",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="underline style (--underline / --no-underline)",
+    )
+    style_grp.add_argument(
+        "--strikeout",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="strikeout style (--strikeout / --no-strikeout)",
+    )
+    style_grp.add_argument("--scale-x", type=float, default=None, metavar="PERCENT", help="horizontal scale percentage")
+    style_grp.add_argument("--scale-y", type=float, default=None, metavar="PERCENT", help="vertical scale percentage")
+    style_grp.add_argument("--spacing", type=float, default=None, metavar="PX", help="inter-character spacing")
+    style_grp.add_argument("--encoding", type=int, default=None, metavar="ID", help="Windows font charset/encoding ID")
+    style_grp.add_argument("--outline", type=float, default=None, metavar="PX", help="outline width")
+    style_grp.add_argument("--shadow", type=float, default=None, metavar="PX", help="shadow depth")
+
+    layout_grp = p.add_argument_group("layout (karaskel position)")
+    layout_grp.add_argument("--an", type=int, choices=range(1, 10), metavar="1-9", help="numpad alignment (1-9)")
+    pos_or_margins = layout_grp.add_mutually_exclusive_group()
+    pos_or_margins.add_argument("--pos", type=parse_pos, metavar="X,Y", help="explicit \\pos(x,y) coordinates")
+    pos_or_margins.add_argument(
+        "--margins", type=parse_margins, metavar="L,R,V", help="left, right, and vertical margins (L,R,V)"
+    )
+    layout_grp.add_argument(
+        "--res", type=parse_size, metavar="WxH", help="script resolution for margins (default: 1280x720 or from --ass)"
+    )
+    layout_grp.add_argument(
+        "--video-size",
+        type=parse_size,
+        metavar="WxH",
+        help="video frame size for karaskel aspect ratio width correction",
+    )
+
+
+@register_command(
+    "measure",
+    help="measure text extents, ink padding, per-character boxes, and karaskel position as JSON",
+    configure=_configure_measure,
+)
+def _run_measure(args: argparse.Namespace, settings: Settings) -> ExitCode:
+    out = Output(quiet=args.quiet, progress=False)
+    output: Path | Literal["-"] = args.output
+    if isinstance(output, Path) and output.exists() and not may_replace(output, args.override):
+        return ExitCode.ERROR
+
+    res_x, res_y = 1280, 720
+    ass_align: int | None = None
+    ass_margins: tuple[int, int, int] | None = None
+
+    if args.ass is not None:
+        try:
+            base_ass_style, (res_x, res_y) = resolve_style_from_ass(args.ass, args.style)
+        except MeasureError as e:
+            out.error(f"aegisub-render: {e}")
+            return ExitCode.ERROR
+        style = MeasureStyle.from_ass_style(base_ass_style)
+        ass_align = base_ass_style.alignment
+        ass_margins = (base_ass_style.margin[0], base_ass_style.margin[1], base_ass_style.margin[2])
+        if args.font is not None:
+            style.font = args.font
+        if args.fontsize is not None:
+            style.fontsize = args.fontsize
+    else:
+        if args.font is None or args.fontsize is None:
+            out.error("aegisub-render: measure requires --font and --fontsize (or --ass)")
+            return ExitCode.ERROR
+        style = MeasureStyle(font=args.font, fontsize=args.fontsize)
+
+    if args.bold is not None:
+        style.bold = args.bold
+    if args.italic is not None:
+        style.italic = args.italic
+    if args.underline is not None:
+        style.underline = args.underline
+    if args.strikeout is not None:
+        style.strikeout = args.strikeout
+    if args.scale_x is not None:
+        style.scalex = args.scale_x
+    if args.scale_y is not None:
+        style.scaley = args.scale_y
+    if args.spacing is not None:
+        style.spacing = args.spacing
+    if args.encoding is not None:
+        style.encoding = args.encoding
+    if args.outline is not None:
+        style.outline = args.outline
+    if args.shadow is not None:
+        style.shadow = args.shadow
+
+    if args.res is not None:
+        res_x, res_y = args.res
+
+    arg_an: int | None = args.an
+    arg_pos: tuple[float, float] | None = args.pos
+    arg_margins: tuple[int, int, int] | None = args.margins
+
+    layout: LayoutSpec | None = None
+    if arg_pos is not None:
+        align = arg_an if arg_an is not None else ass_align
+        if align is None:
+            out.error("aegisub-render: --pos requires --an (or --ass)")
+            return ExitCode.ERROR
+        layout = PosLayout(align=align, x=arg_pos[0], y=arg_pos[1])
+    elif arg_margins is not None:
+        align = arg_an if arg_an is not None else ass_align
+        if align is None:
+            out.error("aegisub-render: --margins requires --an (or --ass)")
+            return ExitCode.ERROR
+        layout = MarginLayout(
+            align=align,
+            margin_l=arg_margins[0],
+            margin_r=arg_margins[1],
+            margin_v=arg_margins[2],
+            res_x=res_x,
+            res_y=res_y,
+        )
+    elif arg_an is not None:
+        if ass_margins is not None:
+            layout = MarginLayout(
+                align=arg_an,
+                margin_l=ass_margins[0],
+                margin_r=ass_margins[1],
+                margin_v=ass_margins[2],
+                res_x=res_x,
+                res_y=res_y,
+            )
+        else:
+            out.error("aegisub-render: --an requires --pos or --margins (or --ass)")
+            return ExitCode.ERROR
+
+    video_x_correct = 1.0
+    if args.video_size is not None:
+        vx, vy = args.video_size
+        video_x_correct = (vy / vx) / (res_y / res_x)
+
+    return measure(
+        style,
+        args.text,
+        output_path=output,
+        layout=layout,
+        video_x_correct_factor=video_x_correct,
+        font_dirs=list(settings.font_dirs),
+        out=out,
+    )
+
+
 __all__ = [
     "CharMetrics",
     "LayoutSpec",
@@ -573,5 +785,7 @@ __all__ = [
     "PosLayout",
     "measure",
     "measure_text",
+    "parse_margins",
+    "parse_pos",
     "resolve_style_from_ass",
 ]

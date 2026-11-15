@@ -47,7 +47,7 @@ def common_files() -> dict[str, bytes]:
     return {
         "libaegisub/lua/modules/lpeg.c": ours("native/src/lpeg.c"),
         "libaegisub/lua/modules/lpeg.h": ours("native/src/lpeg.h"),
-        "automation/include/moonscript.lua": ours("aegisub_render/host/lua/moonscript.lua"),
+        "automation/include/moonscript.lua": ours("src/aegisub_render/host/lua/moonscript.lua"),
     }
 
 

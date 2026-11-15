@@ -5,6 +5,6 @@
 native/src/lpeg.c -text
 native/src/lpeg.h -text
 native/subprojects/** -text
-aegisub_render/host/lua/moonscript.lua -text
+src/aegisub_render/host/lua/moonscript.lua -text
 # subtitle fixtures are compared byte for byte (UTF-8 BOM + CRLF, as Aegisub writes them)
 *.ass -text

@@ -10,8 +10,9 @@ from aegisub_render.ass.file import AssFile
 from aegisub_render.ass.writer import serialize_ass
 from aegisub_render.host.text_extents import register_private_fonts
 from aegisub_render.output import Output
-from aegisub_render.runner import RenderOptions, prepare
+from aegisub_render.runner import RenderOptions, read_input_ass, script_render
 from aegisub_render.settings import Settings, load_settings
+from aegisub_render.video.context import update_relative_paths
 from aegisub_render.worker import Result, execute
 from aegisub_render.wsl import is_wsl, translate, windows_env
 
@@ -119,8 +120,12 @@ def run_lua(tmp_path: Path, settings: Settings) -> RunLua:
         opts.progress = False
         stream = io.StringIO()
         out = Output(stream=stream, progress=False)
-        prepared = prepare(sub, settings, opts, out)
-        result = execute(prepared.job, out)
+        ass_file = read_input_ass(sub, settings.max_input_lines)
+        sr = script_render(ass_file, sub, settings, opts, out, isolate=False)
+        for w in sr.warnings:
+            out.message(w)
+        update_relative_paths(ass_file, sr.video, sr.paths)
+        result = execute(sr.job, out)
         if result.message:
             out.message(result.message)
         return Run(result, stream.getvalue())

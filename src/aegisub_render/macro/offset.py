@@ -1,5 +1,6 @@
 """Shift subtitle dialogue times by a timestamp or frame count without starting Aegisub."""
 
+import argparse
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -7,11 +8,19 @@ from typing import Literal
 
 from aegisub_render.ass.time import clamp_time
 from aegisub_render.ass.writer import serialize_ass
+from aegisub_render.cli import (
+    add_base_args,
+    add_output_args,
+    add_video_args,
+    build_render_options,
+    may_replace,
+)
+from aegisub_render.macro import register_command
 from aegisub_render.output import Output
 from aegisub_render.paths import AegisubPaths
-from aegisub_render.runner import ExitCode, RenderError, RenderOptions, _read_input_ass, _write_output
+from aegisub_render.runner import ExitCode, RenderError, RenderOptions, read_input_ass, write_output
 from aegisub_render.settings import Settings, read_aegisub_options
-from aegisub_render.video.context import build_video_context
+from aegisub_render.video.context import build_video_context, update_relative_paths
 from aegisub_render.video.vfr import START, Framerate
 
 _TIME_OFFSET_RE = re.compile(r"^([+-])?(?:(?:(?:(\d+):)?(\d+):)?(\d+))?\.(\d+)$")
@@ -36,6 +45,13 @@ def parse_offset(spec: str) -> Offset:
     if m:
         return Offset(int(spec), by_frames=True)
     raise ValueError(f"bad offset {spec!r} (expected [+-][[[hh:]mm:]ss].ms or [+-]frames)")
+
+
+def parse_offset_arg(spec: str) -> Offset:
+    try:
+        return parse_offset(spec)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(str(e)) from None
 
 
 def shift_time_by_frames(ms: int, delta_frames: int, timecodes: Framerate) -> int:
@@ -73,7 +89,7 @@ def offset(
         resolved_input = input_path.resolve()
         paths.set_token("?script", str(resolved_input.parent))
         aeg = read_aegisub_options(paths)
-        ass = _read_input_ass(resolved_input, settings.max_input_lines)
+        ass = read_input_ass(resolved_input, settings.max_input_lines)
         original = input_path.read_bytes() if options.dry_run else b""
     except (RenderError, OSError) as e:
         out.error(f"aegisub-render: {e}")
@@ -81,10 +97,11 @@ def offset(
 
     vopts = options.video
     vopts.open_audio = aeg.open_audio
-    save_dir = str(save_to.resolve().parent)
-    video = build_video_context(ass, paths, vopts, save_dir)
+    video = build_video_context(ass, paths, vopts)
     for w in video.warnings:
         out.message(w)
+    # the linked paths are written relative to where this is saved (Aegisub does it on save)
+    update_relative_paths(ass, video, paths, str(save_to.resolve().parent))
 
     if shift.by_frames:
         if not video.timecodes.is_loaded():
@@ -99,7 +116,34 @@ def offset(
             line.end = clamp_time(line.end + shift.amount)
 
     data = serialize_ass(ass, aeg.save_ui_state, options.keep_brand)
-    return _write_output(data, original, input_path, output_path, save_to, options.dry_run, out)
+    return write_output(data, original, input_path, output_path, save_to, options.dry_run, out)
 
 
-__all__ = ["Offset", "offset", "parse_offset", "shift_time_by_frames"]
+def _configure_offset(p: argparse.ArgumentParser) -> None:
+    add_base_args(p)
+    p.add_argument(
+        "offset",
+        type=parse_offset_arg,
+        help="time ([+-][[[hh:]mm:]ss].ms) or frame ([+-]frames) offset",
+    )
+    p.add_argument("--max-input-lines", type=int, help="limit on lines in the input file")
+    p.add_argument("-q", "--quiet", action="store_true", help="only print errors")
+    add_output_args(p)
+    add_video_args(p)
+
+
+@register_command(
+    "offset",
+    help="shift subtitle times by a timestamp or frame count without starting Aegisub",
+    configure=_configure_offset,
+)
+def _run_offset(args: argparse.Namespace, settings: Settings) -> ExitCode:
+    options = build_render_options(args, settings)
+    out = Output(quiet=options.quiet, progress=options.progress)
+    output: Path | Literal["-"] | None = args.output
+    if isinstance(output, Path) and not options.dry_run and output.exists() and not may_replace(output, args.override):
+        return ExitCode.ERROR
+    return offset(args.input, output, args.offset, settings, options, out)
+
+
+__all__ = ["Offset", "offset", "parse_offset", "parse_offset_arg", "shift_time_by_frames"]

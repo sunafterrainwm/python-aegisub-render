@@ -1,12 +1,12 @@
 # Builds the extension modules of aegisub-render (run native/build.py, which also checks the
 # vendored sources, copies the results into the package and generates their .pyi stubs):
 #
-#   aegisub_render/lua/_luajit.pyd  - LuaJIT as the Aegisub tree in native/upstream.json builds it,
+#   src/aegisub_render/lua/_luajit.pyd  - LuaJIT as the Aegisub tree in native/upstream.json builds it,
 #                                     plus lpeg, luabins and the host shim, with the Cython binding
-#   aegisub_render/host/_font.pyd   - text measurement for aegisub.text_extents, one module built from
+#   src/aegisub_render/host/_font.pyd   - text measurement for aegisub.text_extents, one module built from
 #                                     _font.gdi.pyx (GDI) in the Windows branch or _font.fcft.pyx
 #                                     (fontconfig + HarfBuzz) in the Linux branch
-#   aegisub_render/_crt.pyd         - C runtime behaviour (atoi, strtol, printf %g/%f, C casts) of the
+#   src/aegisub_render/_crt.pyd         - C runtime behaviour (atoi, strtol, printf %g/%f, C casts) of the
 #                                     platform's C library (the UCRT on Windows, glibc on Linux)
 #
 # The Lua runtime mirrors an Aegisub source tree (Aegisub v3.5.1 by default), taken by
@@ -52,7 +52,7 @@ assert(luajit.type_name() == 'internal', 'System luajit used instead of built-in
 luabins_dep = subproject('luabins').get_variable('luabins_dep')
 
 py.extension_module('_luajit',
-    'aegisub_render/lua/_luajit.pyx',
+    'src/aegisub_render/lua/_luajit.pyx',
     'native/src/shim.c',
     'native/src/lpeg.c',
     include_directories: include_directories('native/src'),
@@ -62,17 +62,17 @@ py.extension_module('_luajit',
 )
 
 py.extension_module('_crt',
-    'aegisub_render/_crt.pyx',
+    'src/aegisub_render/_crt.pyx',
     override_options: ['warning_level=1'],
 )
 
 # One module, aegisub_render.host._font, from either source (the same functions in both)
 if branch == 'windows'
-    font_source = 'aegisub_render/host/_font.gdi.pyx'
+    font_source = 'src/aegisub_render/host/_font.gdi.pyx'
     font_deps = [cc.find_library('gdi32')]
 else
     # the non-WIN32 text_extents: fontconfig picks the font (as libass does), HarfBuzz measures it
-    font_source = 'aegisub_render/host/_font.fcft.pyx'
+    font_source = 'src/aegisub_render/host/_font.fcft.pyx'
     font_deps = [dependency('fontconfig'), dependency('harfbuzz')]
 endif
 py.extension_module('_font',

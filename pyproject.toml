@@ -5,13 +5,35 @@ description = "Run Aegisub 3.5.1 Automation 4 scripts (kara-templater and friend
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "av>=14",
     "regex>=2024.11.6",
     "tqdm>=4.67",
 ]
 
+[project.optional-dependencies]
+# PyAV is only needed to probe a real video file (video/probe.py imports it lazily), so a
+# project that only borrows the headless macros (measure/offset) does not have to install it.
+# This repository's own uv sync keeps it: see default-extras below.
+video = ["av>=14"]
+
+[project.scripts]
+aegisub-render = "aegisub_render.cli:main"
+
+# Installable, but meant to be installed only as a link to this repository:
+#     uv add --editable <path to this repo>
+# which puts a .pth file pointing at the repository into the consumer's environment (uv's own
+# editable install; on Windows no junction is needed for that, the .pth is the link). Do not ship
+# a wheel: the extension modules (src/aegisub_render/**/_*.pyd, **/*.so) are built by
+# native/build.py for one interpreter and committed to the repository instead of being built on
+# install, so a wheel built from here claims py3-none-any while carrying this machine's binaries.
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
 [dependency-groups]
 dev = [
+    # this repository's own environment keeps PyAV (the tests probe real videos); the version
+    # lives in the [project.optional-dependencies] video extra, not here
+    "aegisub-render[video]",
     "basedpyright>=1.29",
     "cython>=3.3.0",
     "distlib>=0.3.9",
@@ -27,9 +49,12 @@ build = [
 ]
 
 [tool.uv]
-# Not an installable package: run it from the repository (aegisub-render.py / python -m aegisub_render).
-package = false
 default-groups = ["dev"]
+
+[tool.uv.build-backend]
+# src layout: the package is src/aegisub_render (module-root = "src" is also uv_build's default)
+module-root = "src"
+module-name = "aegisub_render"
 
 [tool.ruff]
 line-length = 120
@@ -55,7 +80,7 @@ ignore = [
 [tool.basedpyright]
 pythonVersion = "3.14"
 typeCheckingMode = "strict"
-include = ["aegisub_render", "tests", "scripts", "config.py", "native/build.py", "native/stubgen.py", "native/sync_upstream.py", "aegisub-render.py"]
+include = ["src/aegisub_render", "tests", "scripts", "config.py", "native/build.py", "native/stubgen.py", "native/sync_upstream.py", "aegisub-render.py"]
 exclude = ["reference", "native/subprojects", "**/__pycache__"]
 reportAny = false
 reportExplicitAny = false
@@ -65,7 +90,7 @@ reportPrivateUsage = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = ["src"]
 # LuaJIT raises every Lua error (even ones caught by pcall) as a Windows SEH exception with code
 # 0xE24C4A0x; pytest's faulthandler plugin would print a "fatal exception" report for each one.
 addopts = "-ra -p no:faulthandler"

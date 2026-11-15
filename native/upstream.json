@@ -18,7 +18,7 @@
   ],
   "moonscript": "0.7.0",
   "files": {
-    "aegisub_render/host/lua/moonscript.lua": {
+    "src/aegisub_render/host/lua/moonscript.lua": {
       "from": "automation/include/moonscript.lua",
       "sha256": "7f69f7892ae3cfa45b17fa9296b4cf05105177d91872648bd6c13def2696fbb8"
     },

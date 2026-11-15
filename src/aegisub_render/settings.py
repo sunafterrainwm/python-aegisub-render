@@ -10,7 +10,8 @@ from typing import cast
 from aegisub_render.paths import AegisubPaths
 from aegisub_render.wsl import translate_path
 
-REPO_CONFIG = Path(__file__).resolve().parents[1] / "config.py"
+# the repository's own config.py, two levels up from this package (src/aegisub_render/ -> ../../)
+REPO_CONFIG = Path(__file__).resolve().parents[2] / "config.py"
 
 
 class ConfigError(Exception):

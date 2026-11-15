@@ -58,7 +58,15 @@ def _store_cache(info: VideoInfo) -> None:
 
 
 def _probe(video: Path, st: os.stat_result) -> VideoInfo:
-    import av  # imported lazily: only needed when a real video is probed
+    try:
+        import av  # imported lazily: only needed when a real video is probed
+    except ImportError as e:
+        # PyAV is an optional dependency (the "video" extra); ValueError is what the caller
+        # reports as "could not open video <path>: ...", like any other probing failure.
+        raise ValueError(
+            "PyAV is not installed: install the 'video' extra "
+            "(uv add 'aegisub-render[video]', or uv sync --extra video in its repository)"
+        ) from e
 
     with av.open(str(video)) as container:
         stream = container.streams.video[0]

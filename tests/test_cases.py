@@ -23,9 +23,10 @@ import pytest
 from aegisub_render.ass.writer import AEGISUB_VERSION_STRING
 from aegisub_render.host import _font
 from aegisub_render.output import Output
-from aegisub_render.runner import RenderOptions, output_data, prepare
+from aegisub_render.runner import RenderOptions, output_data, read_input_ass, script_render
 from aegisub_render.settings import Settings
 from aegisub_render.version import __version__
+from aegisub_render.video.context import update_relative_paths
 from aegisub_render.worker import execute
 
 HERE = Path(__file__).parent
@@ -61,11 +62,17 @@ def assert_same_output(ours: list[str], windows: list[str], what: str) -> None:
 def render_case(path: Path, settings: Settings, filter: str | None = None) -> tuple[bytes, str]:
     stream = io.StringIO()
     out = Output(stream=stream, progress=False)
-    prepared = prepare(path, settings, RenderOptions(filter=filter, progress=False), out)
-    result = execute(prepared.job, out)
+    options = RenderOptions(filter=filter, progress=False)
+    ass = read_input_ass(path, settings.max_input_lines)
+    sr = script_render(ass, path, settings, options, out, isolate=False)
+    for w in sr.warnings:
+        out.message(w)
+    update_relative_paths(ass, sr.video, sr.paths)
+    result = execute(sr.job, out)
     assert result.status == "ok", stream.getvalue() + result.message
     assert result.ass is not None
-    return output_data(prepared, result.ass), stream.getvalue()
+    data = output_data(result.ass, sr.is_filter, sr.save_ui_state, keep_brand=False)
+    return data, stream.getvalue()
 
 
 def lines(data: bytes) -> list[str]:

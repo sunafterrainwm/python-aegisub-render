@@ -30,6 +30,7 @@ from pathlib import Path
 from types import ModuleType
 
 ROOT = Path(__file__).resolve().parent.parent
+SRC = ROOT / "src"  # the package lives in src/aegisub_render
 # _font is built from _font.gdi.pyx or _font.fcft.pyx; both give the same stub
 MODULES = ("aegisub_render._crt", "aegisub_render.host._font", "aegisub_render.lua._luajit")
 
@@ -172,14 +173,14 @@ def _format(text: str) -> str:
 
 
 def stub_path(module_name: str) -> Path:
-    return ROOT.joinpath(*module_name.split(".")).with_suffix(".pyi")
+    return SRC.joinpath(*module_name.split(".")).with_suffix(".pyi")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true", help="fail if a committed stub is out of date")
     args = parser.parse_args()
-    sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(SRC))
     stale: list[str] = []
     for name in MODULES:
         text = generate(name)

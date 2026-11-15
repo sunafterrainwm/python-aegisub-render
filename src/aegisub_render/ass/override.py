@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from typing import override
 
 from aegisub_render._crt import atoi, strtol_hex
 from aegisub_render.cutil import mid, trim
@@ -56,7 +57,13 @@ def _multi(name: str, *params: tuple[VarType, ParamClass, int]) -> _TagProto:
     return _TagProto(name, [_ParamProto(o, t, c) for t, c, o in params])
 
 
-_I, _F, _T, _B, _BL = VarType.INT, VarType.FLOAT, VarType.TEXT, VarType.BOOL, VarType.BLOCK
+_I, _F, _T, _B, _BL = (
+    VarType.INT,
+    VarType.FLOAT,
+    VarType.TEXT,
+    VarType.BOOL,
+    VarType.BLOCK,
+)
 _PC = ParamClass
 _N = NOT_OPTIONAL
 
@@ -173,7 +180,10 @@ class OverrideParam:
                 raise ValueError("AssOverrideParameter::Get() called on omitted parameter")
             return default
         if self.classification is ParamClass.ALPHA:
-            pos = next((i for i, c in enumerate(self.value) if c in "0123456789abcdefABCDEF"), len(self.value))
+            pos = next(
+                (i for i, c in enumerate(self.value) if c in "0123456789abcdefABCDEF"),
+                len(self.value),
+            )
             return mid(0, strtol_hex(self.value[pos:]), 255)
         return atoi(self.value)
 
@@ -238,6 +248,7 @@ class OverrideTag:
             param.omitted = False
             cur += 1
 
+    @override
     def __str__(self) -> str:
         result = self.name
         parens = len(self.params) > 1
@@ -249,8 +260,64 @@ class OverrideTag:
         return result
 
 
-def parse_override_tags(text: str) -> list[OverrideTag]:
-    """AssDialogueBlockOverride::ParseTags."""
+_strict_tags = False
+
+
+def strict_tag_parsing() -> bool:
+    """Whether parse_override_tags / parse_dialogue_blocks count brackets by default."""
+    return _strict_tags
+
+
+def set_strict_tag_parsing(strict: bool) -> bool:
+    r"""Switch the default splitting of `{...}` blocks for this process; returns the old value.
+
+    False (the default) is Aegisub's: `depth` only rises on a `(` seen at depth 0, so a `\t`
+    with tags in its parameters is split in the middle (see parse_override_tags). True counts
+    brackets properly, which keeps such a tag in one piece and makes `str(tag)` join back into
+    the input text.
+
+    This changes what every caller in the process gets, including `parse_karaoke_syllables` and
+    `AssDialogue.get_stripped_text`, so it is for a program that has decided it wants correct
+    splitting everywhere -- not for one call (pass `strict=True` for that). The byte-identical
+    output this tool is built for is only tested with the default, so leave it alone while
+    rendering; a caller that does flip it should do so once, at startup.
+    """
+    global _strict_tags  # noqa: PLW0603 - a process-wide switch is the point
+    previous = _strict_tags
+    _strict_tags = strict
+    return previous
+
+
+def parse_override_tags(text: str, strict: bool | None = None) -> list[OverrideTag]:
+    r"""AssDialogueBlockOverride::ParseTags: split a `{...}` block's contents into tags.
+
+    With `strict=False` (the default, unless set_strict_tag_parsing changed it) this is faithful
+    to the C++, including this: `depth` only goes up on a `(` seen at depth 0, so the first `)`
+    ends the parameter list however many `(` are nested inside it. A `\t` with a tag inside its
+    parameters is therefore split in the middle::
+
+        \t(0,248,\clip(690,0,1230,1080)\t(586,922,\clip(1230,0,1230,1080)))
+        -> \t(0,248,\clip(690,0,1230,1080)        and \t(586,922,\clip(1230,0,1230,1080)))
+
+    and joining `str(tag)` back together does not give the input text back: each tag closes its
+    own parenthesis (AssOverrideTag::operator std::string()), so the second half comes out as
+    `\t(586,922,\clip(1230,0,1230,1080),))`. kara-templater writes this shape a lot. The
+    parameters are shifted as well: the first half gets an empty accel, the second a stray `)`.
+    Aegisub only ever writes `Text` back verbatim unless a line was actually edited, which is why
+    this does not corrupt files there -- and why `AssFile.serialize()` is byte-identical.
+
+    What is lost is the bytes, not the picture: libass treats the trailing `)` as junk inside
+    `\t`, and a real assrender comparison of the nested, the flattened and this `,))` form gave
+    pixel-identical masks. So rebuilding a line this way is a fidelity problem (the file no
+    longer matches what Aegisub would write), not a rendering bug.
+
+    `strict=True` counts brackets, so the example above stays one `\t` whose last parameter is
+    the nested animation, and `"".join(str(t) for t in tags)` gives the input text back. Use it
+    to read or rebuild lines of your own; `strict=False` is the split Aegisub itself sees.
+    `None` follows the process-wide default.
+    """
+    if strict is None:
+        strict = _strict_tags
     tags: list[OverrideTag] = []
     depth = 0
     start = 0
@@ -259,6 +326,8 @@ def parse_override_tags(text: str) -> list[OverrideTag]:
         if depth > 0:
             if c == ")":
                 depth -= 1
+            elif strict and c == "(":
+                depth += 1  # Aegisub does not do this: for it, the first ')' closes the tag
         elif c == "\\":
             tags.append(OverrideTag(text[start:i]))
             start = i
@@ -283,8 +352,8 @@ class Block:
     tags: list[OverrideTag] = field(default_factory=list[OverrideTag])
 
 
-def parse_dialogue_blocks(text: str) -> list[Block]:
-    """AssDialogue::ParseTags."""
+def parse_dialogue_blocks(text: str, strict: bool | None = None) -> list[Block]:
+    """AssDialogue::ParseTags. `strict` is handed to parse_override_tags for each `{...}` block."""
     blocks: list[Block] = []
     if not text:
         blocks.append(Block(BlockType.PLAIN, ""))
@@ -300,7 +369,7 @@ def parse_dialogue_blocks(text: str) -> list[Block]:
                 if work and "\\" not in work:
                     blocks.append(Block(BlockType.COMMENT, "{" + work + "}"))
                 else:
-                    tags = parse_override_tags(work)
+                    tags = parse_override_tags(work, strict)
                     for tag in tags:
                         if tag.name == "\\p":
                             drawing_level = tag.params[0].get_int(0)

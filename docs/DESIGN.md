@@ -17,7 +17,7 @@ v3.5.0 → v3.5.1 的差異中，影響本工具的只有 Automation 的三處�
 
 - 新增 `aegisub.version`（`push_version`）：`{string = "3.5.1", major = 3, minor = 5, patch = 1, build = 9914}`。
   `build` 是官方建置的 git revision（6962 + 自最後一個 SVN commit 以來的 commit 數，即 `aegisub.exe` FileVersion
-  的第四段）；淺層 clone 建置時是 0，Aegisub 便不放這個欄位。數值集中在 `aegisub_render/version.py`。
+  的第四段）；淺層 clone 建置時是 0，Aegisub 便不放這個欄位。數值集中在 `src/aegisub_render/version.py`。
 - `include()` 改用 `lua_pcall` 執行被 include 的檔案：執行期錯誤變成
   `Error running Lua include "<name>":
 <錯誤>`（前面接呼叫位置），錯誤物件不是字串／數字時是
@@ -60,7 +60,11 @@ ASS 讀寫與 kara-templater 都與 3.5.0 逐位元組相同，所以原生模�
     C 程式碼後才依結果 `lua_error`（`agi::lua::error` 會加呼叫端位置，C++ 例外則不加，兩種都重現）。
 - `aegisub.re`/`unicode`/`lfs` 保留 Aegisub 原本的 `.moon` 包裝，只把背後的 C 函式表換成 `_luajit.pyx` 裡同簽名的
   C 函式（經由 ffi 呼叫），邏輯在 `host/impls.py`。
-- 專案不安裝成套件（`package = false`、沒有 `src/` 層），由根目錄的 `aegisub-render.py` 啟動。
+- 套件在 `src/aegisub_render`（src layout）。根目錄的 `aegisub-render.py` 把 `src/` 加進 `sys.path` 後啟動；
+  也可以被別的專案**以連結的方式**安裝（`uv add --editable <repo>`，build backend `uv_build`、`module-root = "src"`，
+  console script `aegisub-render`），不發佈 wheel —— 擴充模組是 `native/build.py` 針對單一直譯器編好後 commit
+  進 repo 的，不是安裝時才編譯。設定檔 `config.py` 留在 repo 根目錄，`settings.py` 以 `parents[2]`（`../../`）
+  由套件位置推算它的絕對路徑。
   錯誤經 `char **err` 傳回，回傳字串以同一個 CRT 的 `malloc` 配置，`ffi.C.free` 可正確釋放。
 
 ## 非 Windows（Linux／WSL）
@@ -76,7 +80,7 @@ ASS 讀寫與 kara-templater 都與 3.5.0 逐位元組相同，所以原生模�
 - `_crt` 在 Linux 呼叫 glibc（Aegisub 在 Linux 也是）：`atoi`／`strtol` 不飽和、`long` 是 64 位元。
 - LuaJIT 的錯誤會展開經過 C frame，非 Windows 時照 Aegisub 的 `meson.build` 以 `-fexceptions` 編譯。
 - 路徑照 `std::filesystem` 跟著平台走（`make_preferred` 只有 Windows 會換成 `\`），模組搜尋器用 `LUA_DIRSEP`。
-- WSL：`aegisub_render/wsl.py` 偵測 `/proc/sys/kernel/osrelease` 的 `microsoft`，把 config 與命令列上的
+- WSL：`src/aegisub_render/wsl.py` 偵測 `/proc/sys/kernel/osrelease` 的 `microsoft`，把 config 與命令列上的
   `X:\...` 換成 `/mnt/x/...`；`?user`／`?local` 取自 Windows 的 `%APPDATA%`／`%LOCALAPPDATA%`（`cmd.exe`）。
   連結檔若是 Windows 磁碟機路徑，只在檢查檔案是否存在時翻譯，寫回時保持原樣。
 - `.so` 不 commit（依各系統的 fontconfig／HarfBuzz 版本），builddir 是 `native/builddir-<platform>`；
@@ -88,7 +92,7 @@ ASS 讀寫與 kara-templater 都與 3.5.0 逐位元組相同，所以原生模�
   （字型檔副檔名、`name` 表解析）在 `host/fontnames.py`。分支由 `meson.options` 的 `branch` 決定（預設跟著主機）。
 - Windows 上可用 MSYS2 強制編 Linux 分支：`native/build.py --msys2 <環境>` 以該環境的 gcc／pkg-config／fontconfig／
   HarfBuzz、`-Dbranch=linux` 建置（meson 仍在本專案的 Python 下執行，模組給它用；gcc 連結官方 MSVC 版 CPython
-  沒有問題）。DLL 目錄寫進 `aegisub_render/_dll_dirs.txt` 由 `aegisub_render/__init__.py` 以 `os.add_dll_directory`
+  沒有問題）。DLL 目錄寫進 `src/aegisub_render/_dll_dirs.txt` 由 `src/aegisub_render/__init__.py` 以 `os.add_dll_directory`
   載入（Python 3.8 起擴充模組的相依 DLL 不從 PATH 找）。UCRT64 的 C 函式庫是 UCRT，所以 `_crt` 與 MSVC 版相同；
   MSYS2 的 fontconfig 會看到 Windows 字型（例如 "Arial" 在 900 會選到 Arial Black）。以 `F:\msys64\ucrt64`
   （gcc 16、fontconfig 2.18、HarfBuzz 14）驗證：162 個測試通過、1 個 GDI 專用的略過。
@@ -117,7 +121,7 @@ module not found；include 目錄中對應的檔案對 `require`、`include()` �
 
 ## 限制
 
-worker 行程 + 牆鐘逾時（預設 120 秒）、Lua heap 512,000,000 bytes、產出行數 50,000、輸入行數 100,000。
+worker 行程 + 牆鐘逾時（預設 120 秒，**每個請求**各自計時）、Lua heap 512,000,000 bytes、產出行數 50,000、輸入行數 100,000。
 
 ## 影片
 
@@ -145,9 +149,44 @@ Aegisub 執行巨集或濾鏡時開的進度對話框，在這裡是 worker 行�
 濾鏡名稱（同 `LuaThreadedCall` 的對話框標題），`aegisub.progress.title/task/set` 更新標題、尾端文字與百分比。腳本輸出
 先清掉進度條再印、印完重畫；輸出停在行中間時暫不重畫，以免蓋掉那一行。執行結束後進度條留在畫面上，成功時補到 100%。
 
+## 覆寫標籤：切 token 不是逐位元組安全的
+
+`parse_override_tags`（`AssDialogueBlockOverride::ParseTags`）的 `depth` 只在 depth 0 看到 `(` 時加一，
+所以參數列遇到**第一個** `)` 就結束，不管裡面還有幾層括號。kara-templater 常寫的
+`\t(0,248,\clip(690,0,1230,1080)\t(586,922,\clip(1230,0,1230,1080)))` 因此會被切成兩個 `\t`，
+而 `AssOverrideTag::operator std::string()` 開了括號一定補上右括號，所以把 `str(tag)` 接回去
+得到的不是原字串：後半會變成 `\t(586,922,\clip(1230,0,1230,1080),))`。
+兩邊都忠於上游，刻意不改（改成真正的括號計數就不是 Aegisub 的切法了）。
+
+**壞掉的是位元組，不是畫面**：libass 把 `\t` 裡多出來的 `)` 當垃圾吃掉，下游拿 assrender（真的 libass）
+把巢狀寫法、攤平寫法與這個 `,))` 版在 1920×1080 下各取 13 個時刻比對，遮罩逐像素相同（XOR 為 0）。
+所以這件事的後果是「檔案不再是 Aegisub 會寫出的樣子」，不是渲染錯誤。
+
+Aegisub 平常存檔寫的是 `Text` 原字串（只有真的編輯過 blocks 才 `UpdateText` 回寫），所以在 Aegisub 裡
+踩不到；`AssFile.serialize()` 能逐位元組相同也是同一個原因。巢狀 `\t` 的參數也會錯位（前半多一個空的
+accel，後半多一個 `)` 參數）。
+
+所以提供第二種切法：`parse_override_tags(text, strict=True)`（`parse_dialogue_blocks` 也收）**真的計算
+括號**，上面那一行會保持成一個 `\t`（巢狀動畫留在最後一個參數裡），而且 `"".join(str(t) for t in tags)`
+等於原字串 —— 要重組、重排自己的行就用它。`set_strict_tag_parsing(True)` 可以把「沒傳 `strict=`」時的
+預設整個行程切成這一種（回傳舊值；`strict_tag_parsing()` 讀目前值），給「決定全程都要正確切割」的程式用；
+單次呼叫請直接傳 `strict=True`。
+
+預設**永遠是** Aegisub 那一種（`strict=False`）：這個工具的保證是「輸出和 Aegisub 一致」，而這就是 Aegisub
+看到的切法（libass 自己怎麼切沒有量過；上面的渲染比對只說明那三種寫法畫出來一樣）。切換會影響整個行程裡所有解標籤的地方（`parse_karaoke_syllables`、
+`AssDialogue.get_stripped_text` 都算），逐位元組的輸出只在預設下測過，所以渲染流程不要動它；要動就在
+啟動時動一次。另外 `strict=True` 只修正**切法**，不修正正規化：原字串本來就少一個 `)` 時，
+`AssOverrideTag::operator std::string()` 照樣會補上。
+
+下游的字幕工具集拿 1181 個真的 .ass、820573 行事件量過：10230 行會中這個形狀，全是 OP/ED 的
+fx 與 template 行。`tests/test_ass.py::test_parse_override_tags_nested_transform` 把這個行為釘住。
+
 ## 內建巨集（`macro`）
 
-`aegisub-render macro` 是不需要 Aegisub 腳本、也不啟動 Lua worker 的 Python 操作（`aegisub_render/macro/`）。
+`aegisub-render macro` 是不需要 Aegisub 腳本、也不啟動 Lua worker 的 Python 操作（`src/aegisub_render/macro/`）。
+每個子指令的參數定義與 CLI 入口都放在 `src/aegisub_render/macro/` 對應模組內，並透過 `CommandRegistry.register_command`
+註冊（頂層 CLI 同樣以此註冊並經由 `args.handler` 直接派發）；`aegisub-render --help` 只在 `macro` 說明印出已註冊的巨集名稱，
+執行 `aegisub-render macro`（或 `aegisub-render macro --help`）時才列出每個子指令的用途。
 輸出沿用 `render` 的路徑（`runner._read_input_ass`／`_write_output`：就地覆寫、`-o`、`-o -`、`-y`/`-n`、`--dry-run`），
 寫出時照 Save（`serialize_ass`）。
 

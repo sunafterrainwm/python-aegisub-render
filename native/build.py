@@ -12,8 +12,8 @@ MSYS2 environment (ucrt64, mingw64, clang64 or clangarm64: its prefix, or the MS
 ucrt64), still for this Python; a missing package is reported with that environment's package name. Its build
 directory is native/builddir-msys2-<environment>. The modules it copies into the package replace
 the committed MSVC ones (a plain build, or git checkout, puts those back), and need the
-environment's DLLs: their directory is written to aegisub_render/_dll_dirs.txt (not committed),
-which aegisub_render/__init__.py passes to os.add_dll_directory. A plain build removes that file.
+environment's DLLs: their directory is written to src/aegisub_render/_dll_dirs.txt (not committed),
+which src/aegisub_render/__init__.py passes to os.add_dll_directory. A plain build removes that file.
 
 Requirements: on Windows, Visual Studio 2022 (or Build Tools) with the C++ x64 toolchain;
 elsewhere, a C compiler and the fontconfig and HarfBuzz development files (Debian:
@@ -43,15 +43,16 @@ from typing import cast
 
 NATIVE = Path(__file__).resolve().parent
 ROOT = NATIVE.parent
+SRC = ROOT / "src"
 WINDOWS = sys.platform == "win32"
 BUILD_DIR = NATIVE / ("builddir" if WINDOWS else f"builddir-{sys.platform}")
 SUFFIX = ".pyd" if WINDOWS else ".so"
-DLL_DIRS = ROOT / "aegisub_render" / "_dll_dirs.txt"
+DLL_DIRS = SRC / "aegisub_render" / "_dll_dirs.txt"
 # extension module name -> package directory it is imported from
 MODULES: dict[str, Path] = {
-    "_luajit": ROOT / "aegisub_render" / "lua",
-    "_font": ROOT / "aegisub_render" / "host",
-    "_crt": ROOT / "aegisub_render",
+    "_luajit": SRC / "aegisub_render" / "lua",
+    "_font": SRC / "aegisub_render" / "host",
+    "_crt": SRC / "aegisub_render",
 }
 
 LOCK = NATIVE / "upstream.json"

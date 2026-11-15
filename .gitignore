@@ -2,7 +2,7 @@
 __pycache__/
 *.py[cod]
 # ...except the extension modules built by native/build.py, which are committed
-!/aegisub_render/**/*.pyd
+!/src/aegisub_render/**/*.pyd
 # virtual environments: .venv (Windows), .venv-linux (WSL), ...
 .venv*
 .pytest_cache/
@@ -13,13 +13,13 @@ dist/
 # Aegisub source snapshots (reference only; see README)
 /reference/
 
-# native build trees (the Windows .pyd files copied into aegisub_render/ ARE committed;
+# native build trees (the Windows .pyd files copied into src/aegisub_render/ ARE committed;
 # the .so files built elsewhere are not)
 /native/builddir/
 /native/builddir-*/
-/aegisub_render/**/*.so
+/src/aegisub_render/**/*.so
 # written by native/build.py --msys2: where the modules it built find their DLLs
-/aegisub_render/_dll_dirs.txt
+/src/aegisub_render/_dll_dirs.txt
 /native/subprojects/LuaJIT-*/
 /native/subprojects/luajit/
 /native/subprojects/packagecache/
