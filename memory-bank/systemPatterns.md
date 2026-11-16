@@ -15,7 +15,35 @@ stdout／dry-run diff、把例外轉成 ExitCode）→ `ScriptRender`（`script_
   `isolate=False` 時 Lua state 在本行程（測試用，沒有逾時保護）。
 - `with ScriptRender(...) as sr:` 是常見寫法；忘了 `stop_lua_worker()` 也有 `__del__` 兜底，不會留孤兒行程。
 
-內建巨集（`macro/`）不走 worker：`macro/` 下的子模組（`offset.py`、`measure.py` 等）各自包含 CLI 參數定義與執行函式，
+自動化（`automation/`，＝上游的 `namespace Automation4`：腳本能提供的巨集與匯出濾鏡）：`base.py` 的 `Macro`／`ExportFilter`（可繼承 + 依優先度插入的註冊表，照
+`AssExportFilterChain`）、`fixstyle.py`／`framerate.py`（Aegisub 僅有的兩個 C++ 濾鏡）、
+`spec.py`（ffmpeg filtergraph 語法，單層跳脫）、`plugin.py`（autoload 目錄裡的 `.py` 濾鏡外掛，
+module 自己呼叫 `register_filter`；只要 import 所以一律載入，不受 `--scan-autoload` 管；
+照 Lua API 分兩種基底類別：`Macro`（`process_macro`／`validate_macro`）與 `ExportFilter`
+（`process_filter`），`class X(Macro, ExportFilter)` 合法，`register()` 會丟進對應的登記表，
+巨集那條路無引數建構；`selected_lines`／`active_line` 目前一律 `[]`／`0`；
+內建與否看 `is_builtin()`（`__module__`））、
+`resolve.py`（名字解析：內建 → `--script` 的腳本 → `.py` 外掛 → `--scan-autoload` 掃 autoload 的 Lua；
+掃描結果快取在 `%TEMP%\aegisub-render\export-filters.json`，以目錄清單＋各 Lua 腳本 mtime／大小為鍵，
+取用時再驗一次名字還在）。只有 Python 濾鏡吃參數 —— Lua 濾鏡在上游也拿不到參數。
+`--[no-]garbage-export-filters` 跑檔案 `[Aegisub Project Garbage]` 的 `Export Filters:` 那串
+（和 `--export-filter` 互斥；都沒給時只有互動終端機會問，而 Windows 的 `isatty()` 連 NUL 都說是
+終端機，所以真正的判斷是讀進來立刻 EOF）。
+自動搜尋副檔名集中在 `script_render.automation_files()`（`AUTOMATION_SUFFIXES` ＝ .lua/.moon/.py），
+`resolve_script()` 多了 `suffixes` 參數。`--script x.py` 是合法的：`ScriptRender.is_python` 時不開 Lua，
+`features()` 給它註冊的濾鏡、沒有巨集，`run(filter=...)` 就地跑那個濾鏡。
+額外 autoload 目錄（`--autoload-dirs[-prepend]`、`AEGISUB_AUTOLOAD_DIRS[_PREPEND]`、config 的
+`AUTOLOAD_DIRS[_PREPEND]`）在 `settings.effective_autoload()` 併進 Aegisub 的選項字串，
+所以 `--script` 搜尋、外掛載入、濾鏡掃描與快取鍵全都自動跟著走；`FilterResolver` 收 `env_factory`，
+`convert` 只有真的需要時才去找 Aegisub 安裝。
+兩個子命令分工：`render` **永遠先跑巨集**（沒指定就是 config 的預設腳本／巨集），濾鏡鏈接在後面；
+`convert` 不跑巨集，就是 File → Export（而且可以順便換格式）。`convert` 只有在鏈裡有非內建濾鏡時
+才建 `RenderEnvironment`（`resolve_builtin_chain` 先試），所以純轉檔與純內建濾鏡都不需要 Aegisub。
+有濾鏡時 `.ass` 照 File → Export 寫出。Lua 濾鏡仍走 `ScriptRender(filter=...)`，而且不吃參數。
+`script_render.build_environment()`／`RenderEnvironment` 把「不需要 Lua 的那半」抽出來，
+讓沒有腳本時也能有 paths 與影片 context，整條鏈共用一份。
+
+內建的 headless 操作（`tools/`，與 `automation.Macro` 無關 —— 那是「替腳本跑巨集」的基底類別）不走 worker：`tools/` 下的子模組（`offset.py`、`measure.py` 等）各自包含 CLI 參數定義與執行函式，
 透過 `CommandRegistry.register_command` 註冊（頂層 `render`、`list`、`macro` 亦同，以 `args.handler` 派發，無 `if/elif` 分支）：
 `macro offset` 讀檔 → 平移 → 共用 `runner.write_output`；
 `macro measure` 直接用 `TextExtents`／`_font` 量測並輸出 JSON。
@@ -48,14 +76,29 @@ stdout／dry-run diff、把例外轉成 ExitCode）→ `ScriptRender`（`script_
     （只留 plain 區塊，`\N` 不動）、`AssDialogue.copy`／`AssStyle.copy`／`AssFile.copy`
     （deepcopy，events 拿新 id，照 Aegisub 的 copy ctor）、`entries.ssa_to_ass_alignment`
     （公開 `_SSA_TO_ASS`）。
+  - 覆寫標籤可以改回去：`OverrideParam.set_str`／`set_int`／`set_double`／`set_bool`
+    （＝`AssOverrideParameter::Set`）、BLOCK 參數的惰性 `get_block()`、`Block.get_text()`、
+    `Block.process_parameters()`（會遞迴進 `\t`）、`AssDialogue.update_text(blocks)`。
+    `update_text` 是從 blocks 重建文字，所以吃下面那個「切 token 不是逐位元組安全」的問題。
   - 覆寫標籤有兩種切法：`parse_override_tags`／`parse_dialogue_blocks` 的 `strict=` 真的算括號
     （巢狀 `\t` 不會被切開、`str(tag)` 可逐位元組接回），`set_strict_tag_parsing()`／
     `strict_tag_parsing()` 讀寫行程層級的預設。預設永遠是 Aegisub 那一種，渲染流程不要切換。
   - 寫出的編碼與換行固定是 UTF-8 BOM + CRLF：writer 沒有 BOM／換行選項，要別的在呼叫端轉。
-  - 不讀 .srt／.vtt（要連 Aegisub 的 SubtitleFormat 整套一起移植），也不提供 override 標籤排序
-    （那屬於呼叫端自己的規約，不是 Aegisub 的行為）。
+  - 不提供 override 標籤排序（那屬於呼叫端自己的規約，不是 Aegisub 的行為）。
 - 寫出：`serialize_ass`＝`SubsController::Save`（CleanExtradata → WriteFile），`serialize_export`＝`ExportFile`
   （但保留輸入本來有的那兩段）。
+- `ass/formats/` 是 `.ass` 以外的格式，`subtitle_format*.cpp` 的移植：`base.py` 的
+  `SubtitleFormat`（可繼承的 abstract class，帶 Sort／StripComments／RecombineOverlaps／
+  MergeIdentical／ConvertNewlines／StripTags／CanSave／`prepare()`）＋ 一個模組一個格式
+  （`srt`、`vtt`＋`vtt_style`、`ttxt`、`txt`、`transtation`、`mkv`、`ass_format`）。
+  `formats/__init__.py` 是註冊表（`register_format`＝`LoadFormats`、`get_reader`／`get_writer`
+  照註冊順序找）與門面（`read_subtitles`／`serialize_subtitles`／`write_subtitles`，
+  `make_format` 只把該格式建構子收的選項傳下去）。類別與門面都從 `aegisub_render.ass` 與套件根再匯出。
+  - 讀：`.ass`／`.ssa`、`.srt`、`.vtt`、`.mkv`／`.mka`／`.mks`（PyAV）。
+    寫：`.ass`、`.srt`、`.vtt`、`.ttxt`、`.txt`、`.transtation.txt`（需要 `fps`）。
+  - 本專案自己的決定（理由見 `docs/DESIGN.md`〈其他字幕格式〉）：`TagMode`，匯出一律不寫樣式表，
+    `{...}` 在 `.srt`／`.vtt`／`.ttxt` 預設**保留**、`.txt`／TranStation 預設剝掉。
+  - CLI：`convert` 子命令（不啟動 Lua worker），`render -o out.srt` 也依副檔名換格式；兩者都有 `--tags`。
 - C 行為（`atoi`、`strtol`、`%g`/`%f`、C 轉型）用 `_crt` 擴充模組呼叫真的 MSVC UCRT，不用 Python 模擬。
 
 ## 影片

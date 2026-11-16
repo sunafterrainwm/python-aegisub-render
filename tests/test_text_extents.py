@@ -12,7 +12,7 @@ from aegisub_render.host.text_extents import (  # pyright: ignore[reportPrivateU
     font_names,
     font_weight,
 )
-from aegisub_render.macro.measure import (
+from aegisub_render.tools.measure import (
     MarginLayout,
     MeasureStyle,
     PosLayout,

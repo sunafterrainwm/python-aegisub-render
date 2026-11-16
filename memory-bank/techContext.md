@@ -24,7 +24,7 @@
 - 型別檢查：**命令列的 pyright / basedpyright 認得這種安裝**（它會讀 site-packages 裡的 `.pth`，而
   `uv_build` 寫的是「一行純目錄路徑」，不是 setuptools editable 那種 `__editable___*_finder.py`
   import hook；實測 basedpyright 1.40.2 在只有 `.pth` 的乾淨 venv 裡能完整解析
-  `aegisub_render.macro.measure` 的型別）。**但 VS Code 的擴充功能實務上吃不到**，所以引用方還是要
+  `aegisub_render.tools.measure` 的型別）。**但 VS Code 的擴充功能實務上吃不到**，所以引用方還是要
   自己把這個 repo 的 `src` 加進對方 VS Code workspace 根目錄的搜尋路徑，二選一：
   `.vscode/settings.json` 的 `python.analysis.extraPaths`，或 `pyrightconfig.json` 的 `extraPaths`
   （後者連命令列的 pyright 都讀得到，但它存在時 Pylance 會完全忽略 `python.analysis.*`，所以不要
@@ -68,6 +68,8 @@ uv run --group build python native/build.py --msys2 C:\msys64\ucrt64   # Windows
                                                    # repo 搬家後先刪 native/builddir
 AEGISUB_RENDER_UPDATE_SNAPSHOTS=1 uv run pytest tests/test_cases.py   # 重新記錄 snapshot（只在 Windows）
 uv run python scripts/gen_cases.py                 # 以固定 seed 重新產生測試案例（CRLF）
+uv run aegisub-render convert in.ass -o out.srt    # 轉格式（不啟動 Lua worker）
+uv run aegisub-render convert in.ass -o out.ass --export-filters "Fix Styles"  # 匯出濾鏡鏈（不跑巨集）
 uv run python scripts/build_exe.py                 # 產生 aegisub-render.exe
 ```
 

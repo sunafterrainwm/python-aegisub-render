@@ -50,3 +50,22 @@ def ass_formatted(ms: int, ms_precision: bool = False) -> str:
     if ms_precision:
         s += str(t % 10)
     return s
+
+
+def srt_formatted(ms: int) -> str:
+    """agi::Time::GetSrtFormatted: "0H:MM:SS,mmm", on the exact time (no 10ms rounding)."""
+    return (
+        f"0{ms // 3600000}:{(ms % 3600000) // 600000}{(ms % 600000) // 60000}:"
+        f"{(ms % 60000) // 10000}{(ms % 10000) // 1000},"
+        f"{(ms % 1000) // 100}{(ms % 100) // 10}{ms % 10}"
+    )
+
+
+def vtt_formatted(ms: int) -> str:
+    """A WebVTT timestamp, "0H:MM:SS.mmm" -- GetSrtFormatted with a full stop.
+
+    Not an Aegisub function: WebVTT is not one of its formats. The hours field is always written
+    (the spec allows it to be left out, but every player accepts it) and is two digits, which it
+    always is here because agi::Time tops out just short of ten hours.
+    """
+    return srt_formatted(ms).replace(",", ".")

@@ -9,17 +9,22 @@ import dataclasses
 import multiprocessing
 import os
 import time
+from collections.abc import Sequence
+from dataclasses import dataclass
 from multiprocessing.process import BaseProcess
 from pathlib import Path, PurePath
 from types import TracebackType
-from typing import Final, Protocol, Self, cast
+from typing import TYPE_CHECKING, Final, Protocol, Self, cast
 
 from aegisub_render.ass.file import AssFile
 from aegisub_render.output import Output
 from aegisub_render.paths import AegisubPaths, join
-from aegisub_render.settings import Settings, automation_dirs, read_aegisub_options
-from aegisub_render.video.context import VideoOptions, build_video_context
+from aegisub_render.settings import Settings, automation_dirs, effective_autoload, read_aegisub_options
+from aegisub_render.video.context import VideoContext, VideoOptions, build_video_context
 from aegisub_render.worker import FeatureList, Job, Result, ScriptSession, worker_main
+
+if TYPE_CHECKING:
+    from aegisub_render.automation.base import AutomationContext, ExportFilter, Macro
 
 _STOP: Final = "stop"
 
@@ -62,27 +67,81 @@ class ScriptCancelled(ScriptError):
     """The script called aegisub.cancel()."""
 
 
-_SCRIPT_EXTENSIONS_TO_GUESS = (".lua", ".moon")
+#: what an Aegisub automation script is: Lua, or MoonScript compiled to it
+LUA_SUFFIXES: Final = (".lua", ".moon")
+#: a Python automation file (automation.plugin): the autoload directories may hold those as well,
+#: and Aegisub ignores them, but there is nothing wrong with pointing --script at one
+PYTHON_SUFFIXES: Final = (".py",)
+#: everything this tool will load from an automation directory
+AUTOMATION_SUFFIXES: Final = (*LUA_SUFFIXES, *PYTHON_SUFFIXES)
+
+_SCRIPT_EXTENSIONS_TO_GUESS = LUA_SUFFIXES  # kept: the name this module used before
 
 
-def _get_script_from_automation(name: str, paths: AegisubPaths, autoload_option: str) -> Path:
-    """A file name looked up in ?user then ?data autoload directories."""
+def automation_files(dirs: list[str], suffixes: Sequence[str] = LUA_SUFFIXES) -> list[Path]:
+    """Every file of those directories with one of `suffixes`, in search (?user, ?data) order.
+
+    The listing the autoload directories are read with: `automation.plugin` takes the .py files
+    this way, and the export filter scan the .lua and .moon ones. A name starting with "_" is
+    skipped, so a plugin can keep a private helper next to itself.
+    """
+    found: list[Path] = []
+    wanted = tuple(s.lower() for s in suffixes)
+    for directory in dirs:
+        base = Path(directory)
+        if not base.is_dir():
+            continue
+        for path in sorted(base.iterdir()):
+            if path.suffix.lower() in wanted and not path.name.startswith("_") and path.is_file():
+                found.append(path.resolve())
+    return found
+
+
+def _get_script_from_automation(
+    name: str,
+    paths: AegisubPaths,
+    autoload_option: str,
+    suffixes: Sequence[str] = AUTOMATION_SUFFIXES,
+) -> Path:
+    """A file name looked up in ?user then ?data autoload directories.
+
+    Raises FileNotFoundError if no directory has it, and RenderError if one does but it is the
+    wrong kind of file -- a .py among the Lua, say, which is a filter plugin and not a script.
+    """
 
     for d in automation_dirs(paths, autoload_option):
         candidate = Path(join(d, name))
         if candidate.is_file():
+            if candidate.suffix.lower() not in tuple(s.lower() for s in suffixes):
+                raise RenderError(_wrong_kind(candidate, suffixes))
             return candidate.resolve()
 
     raise FileNotFoundError
 
 
-def resolve_script(name: str, paths: AegisubPaths, autoload_option: str) -> Path:
-    """A path, or a file name looked up in ?user then ?data autoload directories."""
+def _wrong_kind(path: Path, suffixes: Sequence[str]) -> str:
+    return f"{path} is not one of the file types this expects ({', '.join(suffixes)})"
+
+
+def resolve_script(
+    name: str,
+    paths: AegisubPaths,
+    autoload_option: str,
+    suffixes: Sequence[str] = AUTOMATION_SUFFIXES,
+) -> Path:
+    """A path, or a file name looked up in ?user then ?data autoload directories.
+
+    `suffixes` is what the caller can load: any automation file by default (.lua, .moon, .py),
+    or a narrower set when only one kind will do. A name without one of them is tried as it is
+    and then with each appended, in that order.
+    """
 
     if any(sep in name for sep in "/\\") or PurePath(name).is_absolute():
         p = Path(name)
         if not p.is_file():
             raise RenderError(f"script not found: {name}")
+        if p.suffix.lower() not in tuple(s.lower() for s in suffixes):
+            raise RenderError(_wrong_kind(p, suffixes))
         return p.resolve()
 
     _, extension = os.path.splitext(name)
@@ -90,19 +149,71 @@ def resolve_script(name: str, paths: AegisubPaths, autoload_option: str) -> Path
     if extension != "":
         # Refuse to load scripts without extensions
         try:
-            return _get_script_from_automation(name, paths, autoload_option)
+            return _get_script_from_automation(name, paths, autoload_option, suffixes)
         except FileNotFoundError:
             pass
 
-    if extension.lower() not in _SCRIPT_EXTENSIONS_TO_GUESS:
+    if extension.lower() not in suffixes:
         # The user only provided the script name without the extension. Let's make a rough guess.
-        for extension in _SCRIPT_EXTENSIONS_TO_GUESS:
+        for guess in suffixes:
             try:
-                return _get_script_from_automation(f"{name}{extension}", paths, autoload_option)
+                return _get_script_from_automation(f"{name}{guess}", paths, autoload_option, suffixes)
             except FileNotFoundError:
                 pass
 
     raise RenderError(f"script {name!r} not found in the autoload directories ({autoload_option})")
+
+
+@dataclass(slots=True)
+class RenderEnvironment:
+    """Everything a run needs that does not involve Lua: the installation, the paths, the video.
+
+    ScriptRender builds one in its constructor; `build_environment` is the same work without a
+    script, for a caller that only wants the project's video and path tokens -- running export
+    filters, say, where there may be no script at all.
+    """
+
+    paths: AegisubPaths
+    video: VideoContext
+    save_ui_state: bool
+    #: Path/Automation/Autoload with the extra directories merged in (settings.effective_autoload)
+    autoload: str
+    include: str
+    warnings: list[str] = dataclasses.field(default_factory=list[str])
+
+
+def build_environment(
+    file: AssFile,
+    settings: Settings | None = None,
+    *,
+    subtitle_path: Path | None = None,
+    video: VideoOptions | None = None,
+) -> RenderEnvironment:
+    """Resolve the Aegisub installation, the path tokens and the project's video.
+
+    `subtitle_path` is the .ass this AssFile came from: its directory is Aegisub's ?script token.
+    Raises RenderError if the installation is not where the settings say.
+    """
+    settings = settings or Settings()
+    root = settings.aegisub_root
+    if not (root / "automation").is_dir():
+        raise RenderError(f"{root} does not look like an Aegisub installation (no automation directory)")
+    paths = AegisubPaths.create(root, settings.load_appdata)
+    subtitle_dir = (subtitle_path.resolve().parent if subtitle_path is not None else Path.cwd()).resolve()
+    paths.set_token("?script", str(subtitle_dir))
+    aeg = read_aegisub_options(paths)
+
+    vopts = dataclasses.replace(video) if video is not None else VideoOptions()  # never the caller's object
+    vopts.open_audio = aeg.open_audio
+    ctx = build_video_context(file, paths, vopts)
+    return RenderEnvironment(
+        paths=paths,
+        video=ctx,
+        save_ui_state=aeg.save_ui_state,
+        autoload=effective_autoload(settings, aeg.autoload),
+        include=aeg.include,
+        warnings=list(ctx.warnings),
+    )
 
 
 class ScriptRender:
@@ -146,6 +257,7 @@ class ScriptRender:
         progress: bool | None = None,
         isolate: bool = True,
         out: Output | None = None,
+        env: RenderEnvironment | None = None,
     ) -> None:
         """`subtitle_path` is the .ass this AssFile came from: its directory is Aegisub's ?script
         token and its name is what aegisub.file_name() returns. None means the working directory
@@ -154,6 +266,9 @@ class ScriptRender:
         `script` is a file name looked up in the autoload directories, or a path; None takes
         settings.default_script. `macro` and `filter` are mutually exclusive; with neither,
         settings.default_macro runs.
+
+        `env` is a RenderEnvironment the caller already built (build_environment), so that a
+        chain of runs over one file does not resolve the installation and probe the video again.
         """
         self.ass = file
         self.settings = settings = settings or Settings()
@@ -161,27 +276,22 @@ class ScriptRender:
         self._isolate = isolate
         self.warnings: list[str] = []
 
-        root = settings.aegisub_root
-        if not (root / "automation").is_dir():
-            raise RenderError(f"{root} does not look like an Aegisub installation (no automation directory)")
-        self.paths = AegisubPaths.create(root, settings.load_appdata)
-        subtitle_dir = (subtitle_path.resolve().parent if subtitle_path is not None else Path.cwd()).resolve()
-        self.paths.set_token("?script", str(subtitle_dir))
-        aeg = read_aegisub_options(self.paths)
-        self.save_ui_state = aeg.save_ui_state
-
-        vopts = dataclasses.replace(video) if video is not None else VideoOptions()  # never the caller's object
-        vopts.open_audio = aeg.open_audio
-        self.video = build_video_context(file, self.paths, vopts)
-        self.warnings.extend(self.video.warnings)
+        if env is None:
+            env = build_environment(file, settings, subtitle_path=subtitle_path, video=video)
+        self.env = env
+        self.paths = env.paths
+        self.save_ui_state = env.save_ui_state
+        self.video = env.video
+        self.warnings.extend(env.warnings)
+        aeg_autoload, aeg_include = env.autoload, env.include
 
         wanted = str(script) if script is not None else settings.default_script
-        script_path = resolve_script(wanted, self.paths, aeg.autoload)
+        script_path = resolve_script(wanted, self.paths, aeg_autoload)
         self.job = Job(
             script_path=script_path,
             include_dirs=[
                 str(script_path.parent),
-                *automation_dirs(self.paths, aeg.include),
+                *automation_dirs(self.paths, aeg_include),
             ],
             path_tokens=dict(self.paths.tokens),
             ass=file,
@@ -199,6 +309,10 @@ class ScriptRender:
             force=force,
         )
 
+        #: a .py script is a Python automation file: no Lua state, and no default macro either
+        #: (the config's default macro name is Lua's; a .py has whatever it registers)
+        self.is_python = script_path.suffix.lower() in PYTHON_SUFFIXES
+        self._macro_arg = macro
         self._proc: BaseProcess | None = None
         self._conn: _Pipe | None = None
         self._session: ScriptSession | None = None
@@ -227,7 +341,14 @@ class ScriptRender:
     # -- the Lua worker ----------------------------------------------------------------------
 
     def start_lua_worker(self) -> None:
-        """Build the Lua state and load the script. A no-op once it is running."""
+        """Build the Lua state and load the script. A no-op once it is running.
+
+        A Python automation script has no Lua state; this imports it instead, so that the file
+        has registered its filters by the time anything asks what it provides.
+        """
+        if self.is_python:
+            self._python_registered()
+            return
         if self.alive:
             return
         if self._stopped:
@@ -285,8 +406,54 @@ class ScriptRender:
 
     # -- requests ----------------------------------------------------------------------------
 
+    def _python_registered(self) -> tuple[list[type[Macro]], list[type[ExportFilter]]]:
+        """Import the Python automation file; the macros and filters it registers."""
+        from aegisub_render.automation.base import AutomationError
+        from aegisub_render.automation.plugin import plugin_filters, plugin_macros
+
+        try:
+            return plugin_macros(self.script_path), plugin_filters(self.script_path)
+        except (OSError, ImportError, AutomationError) as e:
+            raise ScriptFailed(f"aegisub-render: could not load {self.script_path.name}: {e}") from None
+        except BaseException as e:  # the file's top level can raise anything at all
+            raise ScriptFailed(f"aegisub-render: {self.script_path.name} failed to load: {e}") from None
+
+    def _python_macro(self) -> type[Macro]:
+        """The macro this run asks for: `macro`, or the only one the file registers."""
+        found, _ = self._python_registered()
+        wanted = self._macro_arg
+        if not found:
+            raise ScriptRefused(
+                f"aegisub-render: {self.script_path.name} registers no macros"
+                + (f" (it has the export filter {self.job.filter!r})" if self.job.filter else "")
+            )
+        if wanted is None:
+            return found[0]
+        chosen = next((m for m in found if m.name == wanted), None)
+        if chosen is None:
+            available = ", ".join(repr(m.name) for m in found)
+            raise ScriptRefused(
+                f"aegisub-render: {self.script_path.name} has no macro named {wanted!r}; available: {available}"
+            )
+        return chosen
+
+    def _python_context(self) -> AutomationContext:
+        from aegisub_render.automation.base import AutomationContext
+
+        return AutomationContext(fps=self.video.timecodes, out=self.out)
+
     def features(self) -> FeatureList:
         """The macros and export filters the script registers (the `list` command). Cached."""
+        if self.is_python and self._features is None:
+            found_macros, found_filters = self._python_registered()
+            self._features = FeatureList(
+                self.script_path.stem,
+                "",
+                "",
+                "",
+                [(m.name, m.description) for m in found_macros],
+                [(f.name, f.description, f.priority) for f in found_filters],
+            )
         if self._features is None:
             result = self._request("features")
             if result.features is None:
@@ -301,6 +468,17 @@ class ScriptRender:
         itself validates again unless `force` was given, so asking first is optional; both calls
         share one Lua state, as they do in Aegisub.
         """
+        if self.is_python and self._can_run is None:
+            try:
+                if self.job.filter is not None:
+                    self._can_run = True  # an export filter has nothing to validate
+                else:
+                    macro = self._python_macro()
+                    self._can_run = macro().validate_macro(self.ass, [], 0, self._python_context())
+                    self._refusal = "" if self._can_run else _disabled(self.script_path.name, macro.name)
+            except ScriptRefused as e:
+                self._can_run = False
+                self._refusal = e.message
         if self._can_run is None:
             result = self._request("validate")
             if result.can_run is None:
@@ -319,11 +497,53 @@ class ScriptRender:
         Returns that same object. Raises ScriptRefused (nothing ran), ScriptCancelled
         (aegisub.cancel()) or ScriptFailed (the script raised, or hit a limit).
         """
+        if self.is_python:
+            self._run_python()
+            return self.ass
         result = self._request("run")
         if result.ass is None:
             raise ScriptFailed(result.message)
         _adopt(self.ass, result.ass)
         return self.ass
+
+    def _run_python(self) -> None:
+        """Run the Python automation file's macro, or one of its export filters.
+
+        The selection Aegisub hands a macro is `[]` and `0` here: this tool has no selection of
+        its own yet (see automation.base.Macro).
+        """
+        from aegisub_render.automation.base import AutomationError
+
+        if self.job.filter is not None:
+            _, found = self._python_registered()
+            chosen = next((f for f in found if f.name == self.job.filter), None)
+            if chosen is None:
+                available = ", ".join(repr(f.name) for f in found) or "(none)"
+                raise ScriptRefused(
+                    f"aegisub-render: {self.script_path.name} has no export filter named "
+                    f"{self.job.filter!r}; available: {available}"
+                )
+            run = lambda: chosen().process_filter(self.ass, self._python_context())  # noqa: E731
+            name = chosen.name
+        else:
+            macro = self._python_macro()
+            instance = macro()
+            ctx = self._python_context()
+            if not self.job.force and not instance.validate_macro(self.ass, [], 0, ctx):
+                raise ScriptRefused(_disabled(self.script_path.name, macro.name))
+            run = lambda: instance.process_macro(self.ass, [], 0, ctx)  # noqa: E731
+            name = macro.name
+
+        self.out.progress_begin(name)
+        try:
+            run()
+        except AutomationError as e:
+            self.out.progress_end(complete=False)
+            raise ScriptFailed(f"aegisub-render: {e}") from None
+        except Exception as e:  # a plugin is ordinary Python: a bug in it is not ours
+            self.out.progress_end(complete=False)
+            raise ScriptFailed(f"aegisub-render: {name} failed: {e!r}") from None
+        self.out.progress_end(complete=True)
 
     def _request(self, what: str) -> Result:
         self.start_lua_worker()
@@ -402,6 +622,11 @@ class ScriptRender:
         self._proc, self._conn = None, None
         self._stopped = True
         _kill(proc, conn)
+
+
+def _disabled(script_name: str, macro_name: str) -> str:
+    """What the CLI prints when a macro's validation function says no."""
+    return f"aegisub-render: {script_name}'s macro {macro_name!r} said it cannot run on this file"
 
 
 def _kill(proc: BaseProcess, conn: _Pipe) -> None:

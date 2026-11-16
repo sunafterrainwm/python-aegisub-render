@@ -1,4 +1,14 @@
-"""Built-in headless macro operations (offset, measure) that run without starting Aegisub."""
+"""The `macro` subcommand: operations that do without Aegisub and the Lua worker entirely.
+
+Named after Aegisub's Automation menu, where the same jobs would be macros, but these are not
+`automation.Macro` -- that is the base class for a macro *this tool runs for a script*, Lua or
+Python. What lives here is the other direction: things this tool does itself, each a module of
+its own that registers a `macro <name>` subcommand (see `register_command`).
+
+`offset` is also registered as a built-in export filter, `Shift Times`, so that the same
+shifting can be part of an `--export-filters` chain; `measure` has nothing to do to a file and
+is a subcommand only.
+"""
 
 import argparse
 import importlib
@@ -16,7 +26,7 @@ for _mod_name in ("offset", "measure", *(m.name for m in pkgutil.iter_modules(__
     if not _mod_name.startswith("_"):
         importlib.import_module(f"{__name__}.{_mod_name}")
 
-from aegisub_render.macro.measure import (  # noqa: E402
+from aegisub_render.tools.measure import (  # noqa: E402
     CharMetrics,
     LayoutSpec,
     LinePosition,
@@ -29,10 +39,12 @@ from aegisub_render.macro.measure import (  # noqa: E402
     measure_text,
     resolve_style_from_ass,
 )
-from aegisub_render.macro.offset import (  # noqa: E402
+from aegisub_render.tools.offset import (  # noqa: E402
     Offset,
+    ShiftTimesFilter,
     offset,
     parse_offset,
+    shift_events,
     shift_time_by_frames,
 )
 
@@ -69,11 +81,13 @@ __all__ = [
     "MeasureStyle",
     "Offset",
     "PosLayout",
+    "ShiftTimesFilter",
     "measure",
     "measure_text",
     "offset",
     "parse_offset",
     "register_command",
     "resolve_style_from_ass",
+    "shift_events",
     "shift_time_by_frames",
 ]

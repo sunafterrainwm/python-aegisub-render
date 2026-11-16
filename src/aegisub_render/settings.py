@@ -5,7 +5,7 @@ import os
 import runpy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import Final, cast
 
 from aegisub_render.paths import AegisubPaths
 from aegisub_render.wsl import translate_path
@@ -30,6 +30,16 @@ class Settings:
     max_output_lines: int = 50_000
     max_input_lines: int = 100_000
     font_dirs: list[Path] = field(default_factory=list[Path])
+    # extra automation autoload directories, searched after (autoload_dirs) or before
+    # (autoload_dirs_prepend) the ones Aegisub itself uses -- so scripts and .py filter
+    # plugins can live somewhere of your own instead of inside the Aegisub installation
+    autoload_dirs: list[Path] = field(default_factory=list[Path])
+    autoload_dirs_prepend: list[Path] = field(default_factory=list[Path])
+    # look through the autoload scripts for an --export-filters name the obvious places do not
+    # have (one Lua state per script, so it is off by default); --scan-autoload overrides it
+    scan_autoload: bool = False
+    # call ass.override.set_strict_tag_parsing(True) at startup; --strict overrides it
+    strict_tag_parsing: bool = False
     source: Path | None = None
 
 
@@ -44,6 +54,10 @@ _FIELDS: dict[str, tuple[str, tuple[type, ...]]] = {
     "MAX_OUTPUT_LINES": ("max_output_lines", (int,)),
     "MAX_INPUT_LINES": ("max_input_lines", (int,)),
     "FONT_DIRS": ("font_dirs", (list,)),
+    "AUTOLOAD_DIRS": ("autoload_dirs", (list,)),
+    "AUTOLOAD_DIRS_PREPEND": ("autoload_dirs_prepend", (list,)),
+    "SCAN_AUTOLOAD": ("scan_autoload", (bool,)),
+    "STRICT_TAG_PARSING": ("strict_tag_parsing", (bool,)),
 }
 
 
@@ -137,10 +151,51 @@ def read_aegisub_options(paths: AegisubPaths) -> AegisubOptions:
 
 
 def automation_dirs(paths: AegisubPaths, option: str) -> list[str]:
-    """Decode a '|'-separated Path/Automation option; keep absolute, existing directories."""
+    """Decode a '|'-separated Path/Automation option; keep absolute, existing directories.
+
+    Duplicates are dropped, keeping the first: the option may have the same directory twice
+    once the extra autoload directories are merged into it (see effective_autoload).
+    """
     out: list[str] = []
+    seen: set[str] = set()
     for tok in option.split("|"):
         d = paths.decode(tok)
-        if Path(d).is_absolute() and Path(d).is_dir():
+        if Path(d).is_absolute() and Path(d).is_dir() and (key := str(Path(d)).casefold()) not in seen:
+            seen.add(key)
             out.append(d)
     return out
+
+
+#: environment variables holding extra autoload directories, separated like PATH
+AUTOLOAD_DIRS_ENV: Final = "AEGISUB_AUTOLOAD_DIRS"
+AUTOLOAD_DIRS_PREPEND_ENV: Final = "AEGISUB_AUTOLOAD_DIRS_PREPEND"
+
+
+def env_dirs(name: str) -> list[Path]:
+    """An os.pathsep-separated list of directories from an environment variable."""
+    value = os.environ.get(name, "")
+    return [Path(translate_path(part)) for part in value.split(os.pathsep) if part.strip()]
+
+
+def extra_autoload_dirs(settings: Settings) -> tuple[list[Path], list[Path]]:
+    """The (prepended, appended) extra autoload directories: config.py, then the environment.
+
+    The command line adds to the same two lists (see cli.load_cli_settings), so within each
+    group the order is config.py, the environment, then the command line -- a directory given
+    later in the group is searched later.
+    """
+    prepend = [*settings.autoload_dirs_prepend, *env_dirs(AUTOLOAD_DIRS_PREPEND_ENV)]
+    append = [*settings.autoload_dirs, *env_dirs(AUTOLOAD_DIRS_ENV)]
+    return prepend, append
+
+
+def effective_autoload(settings: Settings, option: str) -> str:
+    """Aegisub's Path/Automation/Autoload option with the extra directories around it.
+
+    Everything that searches the autoload directories -- a --script name, the .py filter
+    plugins, the export filter scan -- goes through automation_dirs with this string, so adding
+    the directories here is all it takes for them to be searched everywhere.
+    """
+    prepend, append = extra_autoload_dirs(settings)
+    parts = [*(str(d) for d in prepend), option, *(str(d) for d in append)]
+    return "|".join(part for part in parts if part)

@@ -88,14 +88,16 @@ def test_render_kara_templater(tmp_path: Path, settings: Settings) -> None:
     assert "Default-furigana" in text
 
 
-def test_render_export_filter(tmp_path: Path, settings: Settings) -> None:
-    """--filter is File > Export: the same result as the macro, without the Project Garbage section
-    unless the input had one."""
+def test_convert_export_filter(tmp_path: Path, settings: Settings) -> None:
+    """convert with an export filter is File > Export: the same result as render's macro,
+    without the Project Garbage section unless the input had one."""
     src = write(tmp_path / "in.ass", TEMPLATE_ASS)
     saved, exported = tmp_path / "saved.ass", tmp_path / "exported.ass"
     r = cli("render", str(src), "-o", str(saved))
     assert r.returncode == 0, r.stderr
-    r = cli("render", str(src), "-o", str(exported), "--filter", "Karaoke template")
+    # the filter belongs to kara-templater.lua, which --scan-autoload finds
+    export_args = ["--scan-autoload", "--export-filters", "Karaoke template"]
+    r = cli("convert", str(src), "-o", str(exported), *export_args)
     assert r.returncode == 0, r.stderr
     saved_text = saved.read_text(encoding="utf-8-sig")
     exported_text = exported.read_text(encoding="utf-8-sig")
@@ -105,7 +107,7 @@ def test_render_export_filter(tmp_path: Path, settings: Settings) -> None:
 
     garbage = "[Aegisub Project Garbage]\nLast Style Storage: Default\n\n"
     write(src, TEMPLATE_ASS.replace("[V4+ Styles]", garbage + "[V4+ Styles]"))
-    r = cli("render", str(src), "-o", str(exported), "-y", "--filter", "Karaoke template")
+    r = cli("convert", str(src), "-o", str(exported), "-y", *export_args)
     assert r.returncode == 0, r.stderr
     exported_text = exported.read_text(encoding="utf-8-sig")
     assert "\n[Aegisub Project Garbage]\nLast Style Storage: Default\n\n[V4+ Styles]" in exported_text

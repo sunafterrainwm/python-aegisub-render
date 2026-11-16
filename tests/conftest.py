@@ -116,7 +116,7 @@ def run_lua(tmp_path: Path, settings: Settings) -> RunLua:
         sub.write_text(ass, encoding="utf-8-sig")
         opts = options or RenderOptions()
         opts.script = str(script)
-        opts.macro = macro if opts.filter is None else None
+        opts.macro = macro
         opts.progress = False
         stream = io.StringIO()
         out = Output(stream=stream, progress=False)

@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 from aegisub_render._crt import cdiv
-from aegisub_render.cutil import try_parse_double
+from aegisub_render.cutil import try_parse_double, try_parse_int
 
 DEFAULT_DENOMINATOR = 1_000_000_000
 MAX_TIMECODES = 10_000_000
@@ -157,6 +157,57 @@ class Framerate:
             )
         return self.timecodes[frame]
 
+    def smpte_at_frame(self, frame: int) -> tuple[int, int, int, int]:
+        """Framerate::SmpteAtFrame: (h, m, s, f) of a frame number."""
+        frame = max(frame, 0)
+        ifps = math.ceil(self.fps())
+
+        if self.drop and self.denominator == 1001 and self.numerator % 30000 == 0:
+            # NTSC skips the first two frames of every minute except for multiples of ten. For
+            # multiples of NTSC, simply multiplying the number of frames skips seems like the
+            # most sensible option.
+            drop_factor = self.numerator // 30000
+            one_minute = 60 * 30 * drop_factor - drop_factor * 2
+            ten_minutes = 60 * 10 * 30 * drop_factor - drop_factor * 18
+            ten_minute_groups = frame // ten_minutes
+            last_ten_minutes = frame % ten_minutes
+            frame += ten_minute_groups * 18 * drop_factor
+            frame += cdiv(last_ten_minutes - 2 * drop_factor, one_minute) * 2 * drop_factor
+        elif self.drop and ifps != self.fps():
+            # Non-integral frame rates other than NTSC aren't supported by SMPTE timecodes, but
+            # the user has asked for it so just give something that resembles a valid timecode
+            # which is no more than half a frame off wallclock time
+            frame = int(frame / self.fps() * ifps + 0.5)
+
+        return (frame // (ifps * 60 * 60), (frame // (ifps * 60)) % 60, (frame // ifps) % 60, frame % ifps)
+
+    def smpte_at_time(self, ms: int) -> tuple[int, int, int, int]:
+        """Framerate::SmpteAtTime."""
+        return self.smpte_at_frame(self.frame_at_time(ms))
+
+    def frame_at_smpte(self, h: int, m: int, s: int, f: int) -> int:
+        """Framerate::FrameAtSmpte."""
+        ifps = math.ceil(self.fps())
+
+        if self.drop and self.denominator == 1001 and self.numerator % 30000 == 0:
+            drop_factor = self.numerator // 30000
+            one_minute = 60 * 30 * drop_factor - drop_factor * 2
+            ten_minutes = 60 * 10 * 30 * drop_factor - drop_factor * 18
+            ten_m = m // 10
+            m = m % 10
+            # The specified frame doesn't actually exist so skip forward to the next that does
+            if m != 0 and s == 0 and f < 2 * drop_factor:
+                f = 2 * drop_factor
+            return h * ten_minutes * 6 + ten_m * ten_minutes + m * one_minute + s * ifps + f
+        if self.drop and ifps != self.fps():
+            frame = (h * 60 * 60 + m * 60 + s) * ifps + f
+            return int(frame / ifps * self.fps() + 0.5)
+        return (h * 60 * 60 + m * 60 + s) * ifps + f
+
+    def time_at_smpte(self, h: int, m: int, s: int, f: int) -> int:
+        """Framerate::TimeAtSmpte."""
+        return self.time_at_frame(self.frame_at_smpte(h, m, s, f))
+
 
 _INT_PREFIX = re.compile(r"[ \t\n\v\f\r]*([+-]?\d+)")
 
@@ -233,3 +284,24 @@ def _v1_parse(lines: list[str], assume_line: str) -> Framerate:
     f.last = int(last_time)
     f.numerator = int(fps * DEFAULT_DENOMINATOR)
     return f
+
+
+class SmpteFormatter:
+    """agi::SmpteFormatter (libaegisub/ass/time.cpp): times as SMPTE timecodes."""
+
+    __slots__ = ("fps", "sep")
+
+    def __init__(self, fps: Framerate, sep: str = ":") -> None:
+        self.fps = fps
+        self.sep = sep
+
+    def to_smpte(self, ms: int) -> str:
+        h, m, s, f = self.fps.smpte_at_time(ms)
+        return f"{h:02d}{self.sep}{m:02d}{self.sep}{s:02d}{self.sep}{f:02d}"
+
+    def from_smpte(self, text: str) -> int:
+        toks = text.split(self.sep)
+        if len(toks) != 4:
+            return 0
+        h, m, s, f = (try_parse_int(t) or 0 for t in toks)
+        return self.fps.time_at_smpte(h, m, s, f)

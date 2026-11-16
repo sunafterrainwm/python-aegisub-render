@@ -62,9 +62,9 @@ def assert_same_output(ours: list[str], windows: list[str], what: str) -> None:
 def render_case(path: Path, settings: Settings, filter: str | None = None) -> tuple[bytes, str]:
     stream = io.StringIO()
     out = Output(stream=stream, progress=False)
-    options = RenderOptions(filter=filter, progress=False)
+    options = RenderOptions(progress=False)
     ass = read_input_ass(path, settings.max_input_lines)
-    sr = script_render(ass, path, settings, options, out, isolate=False)
+    sr = script_render(ass, path, settings, options, out, isolate=False, filter=filter)
     for w in sr.warnings:
         out.message(w)
     update_relative_paths(ass, sr.video, sr.paths)

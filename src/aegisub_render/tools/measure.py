@@ -12,10 +12,10 @@ from aegisub_render.ass.entries import AssStyle, SubtitleFormatParseError
 from aegisub_render.ass.parser import UnsupportedEncodingError, read_ass_file
 from aegisub_render.cli import add_override_args, may_replace, parse_output, parse_size
 from aegisub_render.host.text_extents import TextExtents, register_private_fonts
-from aegisub_render.macro import register_command
 from aegisub_render.output import Output
 from aegisub_render.runner import STDOUT, ExitCode
 from aegisub_render.settings import Settings
+from aegisub_render.tools import register_command
 from aegisub_render.wsl import translate_path
 
 

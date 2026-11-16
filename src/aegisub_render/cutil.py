@@ -54,3 +54,18 @@ def trim(s: str) -> str:
 
 def trim_left(s: str) -> str:
     return s.lstrip(" \t\n\v\f\r")
+
+
+def float_to_string(value: float, precision: int = 3) -> str:
+    """float_to_string (src/utils.cpp): "%.3f" with the trailing zeros (and a bare ".") trimmed.
+
+    Python's own float formatting rounds the way the UCRT's printf does (to nearest, ties to
+    even), so this does not have to go through _crt.
+    """
+    s = "%.*f" % (precision, value)
+    if "." not in s:  # precision 0: there is nothing to trim (the C++ would eat real digits)
+        return s
+    pos = len(s.rstrip("0"))
+    if pos and s[pos - 1] == ".":
+        pos -= 1
+    return s[:pos] if pos else s

@@ -1,5 +1,13 @@
 """ASS subtitle model, parser and writer (port of Aegisub 3.5.1 src/ass_*.cpp).
 
+The other subtitle formats live in the `formats` subpackage (SubRip, WebVTT, MPEG-4 Timed Text,
+plain text, TranStation, Matroska); its classes and its `read_subtitles` / `write_subtitles`
+dispatcher are re-exported here too.
+
+The other subtitle formats live in the `formats` subpackage (SubRip, WebVTT, MPEG-4 Timed Text,
+plain text, TranStation, Matroska); its classes and its `read_subtitles` / `write_subtitles`
+dispatcher are re-exported here too.
+
 The model classes and the entry points of the parser and the writer are re-exported here (and
 the classes again from the top-level package), so that `from aegisub_render import AssFile` is
 all a caller needs. AssFile itself carries from_text / from_bytes / from_path / serialize /
@@ -20,6 +28,26 @@ from aegisub_render.ass.entries import (
     ssa_to_ass_alignment,
 )
 from aegisub_render.ass.file import AssFile
+from aegisub_render.ass.formats import (
+    AssSubtitleFormat,
+    MKVSubtitleFormat,
+    SRTSubtitleFormat,
+    SrtTagParser,
+    SubtitleFormat,
+    TagMode,
+    TranStationSubtitleFormat,
+    TTXTSubtitleFormat,
+    TXTSubtitleFormat,
+    UnknownSubtitleFormatError,
+    UnsupportedOperationError,
+    VTTSubtitleFormat,
+    get_reader,
+    get_writer,
+    read_subtitles,
+    register_format,
+    serialize_subtitles,
+    write_subtitles,
+)
 from aegisub_render.ass.karaoke import KaraokeSyllable, parse_karaoke_syllables
 from aegisub_render.ass.override import (
     Block,
@@ -54,22 +82,36 @@ __all__ = [
     "AssInfo",
     "AssParser",
     "AssStyle",
+    "AssSubtitleFormat",
     "Block",
     "BlockType",
     "Color",
     "ExtradataEntry",
     "Group",
     "KaraokeSyllable",
+    "MKVSubtitleFormat",
     "OverrideParam",
     "OverrideTag",
     "ParamClass",
     "ProjectProperties",
+    "SRTSubtitleFormat",
+    "SrtTagParser",
+    "SubtitleFormat",
     "SubtitleFormatParseError",
+    "TTXTSubtitleFormat",
+    "TXTSubtitleFormat",
+    "TagMode",
+    "TranStationSubtitleFormat",
+    "UnknownSubtitleFormatError",
     "UnsupportedEncodingError",
+    "UnsupportedOperationError",
+    "VTTSubtitleFormat",
     "VarType",
     "ass_formatted",
     "clamp_time",
     "decode_subtitle_bytes",
+    "get_reader",
+    "get_writer",
     "header_lines",
     "parse_ass_bytes",
     "parse_ass_lines",
@@ -79,11 +121,15 @@ __all__ = [
     "parse_override_tags",
     "parse_time",
     "read_ass_file",
+    "read_subtitles",
+    "register_format",
     "serialize_ass",
     "serialize_export",
+    "serialize_subtitles",
     "set_strict_tag_parsing",
     "split_subtitle_text",
     "ssa_to_ass_alignment",
     "strict_tag_parsing",
     "write_ass_file",
+    "write_subtitles",
 ]

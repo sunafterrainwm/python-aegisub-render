@@ -8,10 +8,40 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, overload
 
+from aegisub_render.ass.entries import SubtitleFormatParseError
+from aegisub_render.ass.file import AssFile
+from aegisub_render.ass.formats import TagMode, read_subtitles, serialize_subtitles
+from aegisub_render.ass.override import set_strict_tag_parsing
+from aegisub_render.ass.parser import UnsupportedEncodingError
+from aegisub_render.automation import AutomationError, FilterResolver, is_builtin
+from aegisub_render.automation import filters as builtin_filters
 from aegisub_render.output import Output, use_utf8_for_pipes
-from aegisub_render.runner import STDOUT, ExitCode, RenderOptions, list_features, render
-from aegisub_render.settings import ConfigError, Settings, load_settings
-from aegisub_render.video.context import VideoOptions
+from aegisub_render.paths import AegisubPaths
+from aegisub_render.runner import (
+    STDOUT,
+    ExitCode,
+    RenderOptions,
+    export_filter_chain,
+    list_features,
+    render,
+    run_export_filters,
+    write_output,
+)
+from aegisub_render.script_render import (
+    RenderEnvironment,
+    RenderError,
+    ScriptError,
+    build_environment,
+)
+from aegisub_render.settings import (
+    AUTOLOAD_DIRS_ENV,
+    AUTOLOAD_DIRS_PREPEND_ENV,
+    ConfigError,
+    Settings,
+    load_settings,
+)
+from aegisub_render.video.context import VideoOptions, parse_framerate
+from aegisub_render.video.vfr import Framerate, FramerateError
 from aegisub_render.wsl import translate, translate_path
 
 NEGATIVE_NUMBER_RE = re.compile(r"^-[\d.]")
@@ -143,6 +173,7 @@ def add_base_args(p: argparse.ArgumentParser) -> None:
         help="config file (default: AEGISUB_RENDER_CONFIG or the repository's config.py)",
     )
     p.add_argument("--aegisub-root", type=translate_path, help="Aegisub installation directory (?data)")
+    add_autoload_args(p)
     appdata = p.add_mutually_exclusive_group()
     appdata.add_argument(
         "--load-appdata",
@@ -196,14 +227,97 @@ def add_override_args(p: argparse.ArgumentParser) -> None:
     )
 
 
+def add_export_filter_args(p: argparse.ArgumentParser, after_macro: bool) -> None:
+    p.add_argument(
+        "--export-filter",
+        "--export-filters",
+        dest="export_filters",
+        action="append",
+        default=[],
+        metavar="CHAIN",
+        help=("export filters to run after the macro, " if after_macro else "export filters to run, ")
+        + "in ffmpeg's filtergraph syntax: \"name=value:key=value,name...\" (a backslash or '...' "
+        "quotes a name containing , : = or a quote; a Windows path needs the quotes). Built-in: "
+        "'Fix Styles', 'Shift Times=+0:00:01.50', "
+        "'Transform Framerate=input=23.976:output=25[:reverse=1]'; any other name is "
+        "an export filter a Lua script registers, which takes no options here. They run in the "
+        "order written, and an .ass result is then written like File > Export. Repeatable",
+    )
+    p.add_argument(
+        "--garbage-export-filters",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="run the filters the file itself lists in [Aegisub Project Garbage] 'Export "
+        "Filters:' (what was last ticked in Aegisub's export dialog). Cannot be given together "
+        "with --export-filter; left out, a terminal is asked and anything else does not run them",
+    )
+    p.add_argument(
+        "--scan-autoload",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="when an --export-filter name is not a built-in one, load every autoload script to "
+        "find out who registers it (slow; the answer is cached in TEMP). Default: config.py's "
+        "SCAN_AUTOLOAD (False)",
+    )
+
+
+def add_autoload_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--autoload-dir",
+        "--autoload-dirs",
+        dest="autoload_dirs",
+        type=translate_path,
+        action="append",
+        default=[],
+        metavar="DIR",
+        help="an extra automation autoload directory, searched after Aegisub's own: --script "
+        "finds .lua/.moon/.py there by name, and the .py export filter plugins in it are "
+        f"loaded. Repeatable; {AUTOLOAD_DIRS_ENV} (separated like PATH) does the same",
+    )
+    p.add_argument(
+        "--autoload-dir-prepend",
+        "--autoload-dirs-prepend",
+        dest="autoload_dirs_prepend",
+        type=translate_path,
+        action="append",
+        default=[],
+        metavar="DIR",
+        help=f"the same, but searched before Aegisub's own directories ({AUTOLOAD_DIRS_PREPEND_ENV})",
+    )
+
+
+def add_strict_arg(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--strict",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="parse {...} override tags by counting brackets, so a nested \\t(...) survives being "
+        "rebuilt (set_strict_tag_parsing). Default: config.py's STRICT_TAG_PARSING (False), which "
+        "is Aegisub's own splitting",
+    )
+
+
+def add_tags_arg(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--tags",
+        choices=[mode.value for mode in TagMode],
+        help="what a non-ASS output does with the {...} override tags: keep them (the default for "
+        ".srt/.vtt/.ttxt, since players built on libass read them), strip them (the default for "
+        ".txt and TranStation, and what Aegisub does everywhere), or html for the <b>/<i>/<u>/<s> "
+        "translation Aegisub's SubRip writer does",
+    )
+
+
 def add_output_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "-o",
         "--output",
         type=parse_output,
-        help="output .ass file, or - for stdout (default: replace the input file)",
+        help="output file, or - for stdout (default: replace the input file). An extension another "
+        "format claims (.srt, .vtt, .ttxt, .txt, .transtation.txt) writes that format instead of .ass",
     )
     add_override_args(p)
+    add_tags_arg(p)
     p.add_argument(
         "--dry-run",
         action="store_true",
@@ -233,6 +347,7 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("-v", "--verbose", action="count", default=0, help="raise the trace level by one per -v")
     p.add_argument("-q", "--quiet", action="store_true", help="only print errors and script output")
     p.add_argument("--no-progress", action="store_true", help="never draw the progress line")
+    add_strict_arg(p)
     add_video_args(p)
 
 
@@ -259,6 +374,13 @@ def load_cli_settings(args: argparse.Namespace) -> Settings:
     font_dir = getattr(args, "font_dir", None)
     if font_dir:
         s.font_dirs = [*s.font_dirs, *font_dir]
+    # the command line is the last of the three sources, so it is searched last within its group
+    autoload_dirs = getattr(args, "autoload_dirs", None)
+    if autoload_dirs:
+        s.autoload_dirs = [*s.autoload_dirs, *autoload_dirs]
+    autoload_prepend = getattr(args, "autoload_dirs_prepend", None)
+    if autoload_prepend:
+        s.autoload_dirs_prepend = [*s.autoload_dirs_prepend, *autoload_prepend]
     return s
 
 
@@ -270,7 +392,9 @@ def build_render_options(args: argparse.Namespace, settings: Settings) -> Render
     return RenderOptions(
         script=getattr(args, "script", None),
         macro=getattr(args, "macro", None),
-        filter=getattr(args, "filter", None),
+        export_filters=list(getattr(args, "export_filters", None) or []),
+        garbage_export_filters=getattr(args, "garbage_export_filters", None),
+        scan_autoload=getattr(args, "scan_autoload", None),
         selection=getattr(args, "select", None),
         force=getattr(args, "force", False),
         video=VideoOptions(
@@ -288,7 +412,51 @@ def build_render_options(args: argparse.Namespace, settings: Settings) -> Render
         progress=False if getattr(args, "no_progress", False) else None,
         dry_run=getattr(args, "dry_run", False),
         keep_brand=getattr(args, "keep_brand", False),
+        tags=getattr(args, "tags", None),
     )
+
+
+def check_filter_args(args: argparse.Namespace, out: Output) -> bool:
+    """--garbage-export-filters says "run the file's list", so it cannot pick one as well."""
+    if getattr(args, "export_filters", None) and getattr(args, "garbage_export_filters", None) is not None:
+        out.error("aegisub-render: --garbage-export-filters cannot be given together with --export-filter")
+        return False
+    return True
+
+
+def ask_export_filters(out: Output) -> Callable[[list[str]], bool]:
+    """The callback RenderOptions.confirm_export_filters gets: ask, but only a real terminal.
+
+    `isatty()` is not enough on Windows, which says NUL is a character device and therefore a
+    terminal; an immediate EOF from the read is what actually tells the two apart, so the hint
+    about --garbage-export-filters is printed then rather than instead of asking.
+    """
+
+    def ask(names: list[str]) -> bool:
+        listed = ", ".join(names)
+        answer = ""
+        if sys.stdin.isatty():
+            print(
+                f"aegisub-render: the file lists the export filters {listed}. Run them? [y/N] ",
+                end="",
+                file=sys.stderr,
+                flush=True,
+            )
+            try:
+                answer = sys.stdin.readline()
+            except KeyboardInterrupt:
+                answer = ""
+            if answer.strip().lower() in ("y", "yes"):
+                return True
+        if answer == "":  # nothing to read: not a terminal after all
+            out.message(
+                f"aegisub-render: the file lists the export filters {listed}; pass --garbage-export-filters to run them"
+            )
+        else:
+            out.message("aegisub-render: not running them")
+        return False
+
+    return ask
 
 
 def may_replace(path: Path, override: bool | None) -> bool:
@@ -314,13 +482,8 @@ def may_replace(path: Path, override: bool | None) -> bool:
 def _configure_render(p: argparse.ArgumentParser) -> None:
     add_common_args(p)
     add_output_args(p)
-    which = p.add_mutually_exclusive_group()
-    which.add_argument("--macro", help="macro name (default from config: Apply karaoke template)")
-    which.add_argument(
-        "--filter",
-        help="export filter name; the result is then written like File > Export, but keeps the input's "
-        "Project Garbage and Extradata sections",
-    )
+    p.add_argument("--macro", help="macro name (default from config: Apply karaoke template)")
+    add_export_filter_args(p, after_macro=True)
     p.add_argument("--select", type=parse_selection, help="dialogue lines to select, e.g. 1,3-5 (default: all)")
     p.add_argument("--force", action="store_true", help="run the macro even if its validation function says no")
 
@@ -333,6 +496,9 @@ def _configure_render(p: argparse.ArgumentParser) -> None:
 def _run_render(args: argparse.Namespace, settings: Settings) -> ExitCode:
     options = build_render_options(args, settings)
     out = Output(quiet=options.quiet, progress=options.progress)
+    options.confirm_export_filters = ask_export_filters(out)
+    if not check_filter_args(args, out):
+        return ExitCode.ERROR
     output: Path | Literal["-"] | None = args.output
     if isinstance(output, Path) and not options.dry_run and output.exists() and not may_replace(output, args.override):
         return ExitCode.ERROR
@@ -359,7 +525,155 @@ def _run_list(args: argparse.Namespace, settings: Settings) -> ExitCode:
     print("export filters:")
     for name, desc, priority in features.filters:
         print(f"  {name}  (priority {priority})" + (f"  -- {desc.splitlines()[0]}" if desc else ""))
+    # what the registry holds that no automation file provides: the built-in filters
+    for builtin in (f for f in builtin_filters() if is_builtin(f)):
+        desc = builtin.description.splitlines()[0] if builtin.description else ""
+        print(f"  {builtin.name}  (priority {builtin.priority}, built in)" + (f"  -- {desc}" if desc else ""))
     return ExitCode.OK
+
+
+def _configure_convert(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "input",
+        type=translate_path,
+        help="subtitle file to read: .ass, .ssa, .srt, .vtt, .mkv, .mka or .mks",
+    )
+    p.add_argument(
+        "-o",
+        "--output",
+        type=parse_output,
+        required=True,
+        help="output file, or - for stdout (which needs --to). The format follows the extension: "
+        ".ass, .srt, .vtt, .ttxt, .txt, .transtation.txt",
+    )
+    p.add_argument("--to", help="write this format whatever --output is called (srt, vtt, ttxt, txt, ass, ...)")
+    add_override_args(p)
+    add_tags_arg(p)
+    p.add_argument("--export", action="store_true", help="write .ass the way File > Export does")
+    p.add_argument(
+        "--keep-brand",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="keep the input's header comments as they are instead of naming aegisub-render in them",
+    )
+    tc = p.add_mutually_exclusive_group()
+    tc.add_argument("--fps", help="frame rate for TranStation's SMPTE timecodes (e.g. 23.976 or 24000/1001)")
+    tc.add_argument("--timecodes", type=translate, help="timecodes file (v1 or v2) to take that frame rate from")
+    p.add_argument(
+        "--play-res",
+        type=parse_size,
+        metavar="WxH",
+        default=(1280, 720),
+        help="the canvas a positioned WebVTT cue is mapped onto when reading (default: 1280x720)",
+    )
+    p.add_argument("--track", type=int, help="Matroska subtitle track index to read (default: the first)")
+    add_export_filter_args(p, after_macro=False)
+    # only needed to find the Lua script behind an export filter name; a chain of built-in
+    # filters, and a plain conversion, need no Aegisub installation at all
+    p.add_argument(
+        "--config",
+        type=translate_path,
+        help="config file (default: AEGISUB_RENDER_CONFIG or the repository's config.py)",
+    )
+    p.add_argument("--aegisub-root", type=translate_path, help="Aegisub installation directory (?data)")
+    add_autoload_args(p)
+    appdata = p.add_mutually_exclusive_group()
+    appdata.add_argument(
+        "--load-appdata", dest="load_appdata", action="store_true", default=None, help=argparse.SUPPRESS
+    )
+    appdata.add_argument("--no-load-appdata", dest="load_appdata", action="store_false", help=argparse.SUPPRESS)
+    add_strict_arg(p)
+    p.add_argument("-q", "--quiet", action="store_true", help="only print errors")
+
+
+@register_command(
+    "convert",
+    help="read a subtitle file and write it in another format (no script is run)",
+    configure=_configure_convert,
+)
+def _run_convert(args: argparse.Namespace, settings: Settings) -> ExitCode:
+    out = Output(quiet=args.quiet, progress=False)
+    if not check_filter_args(args, out):
+        return ExitCode.ERROR
+    output: Path | Literal["-"] = args.output
+    if args.to is None and output == STDOUT:
+        out.error("aegisub-render: --output - needs --to to say which format to write")
+        return ExitCode.ERROR
+    if isinstance(output, Path) and output.exists() and not may_replace(output, args.override):
+        return ExitCode.ERROR
+
+    # get_writer picks the format from a file name, so --to becomes one
+    name = Path("subtitles." + args.to) if args.to else output
+    assert isinstance(name, Path)
+    try:
+        fps = None
+        if args.fps is not None:
+            fps = parse_framerate(args.fps)
+        elif args.timecodes is not None:
+            fps = Framerate.from_file(Path(args.timecodes))
+        ass = read_subtitles(args.input, play_res=args.play_res, track=args.track)
+        export = args.export or run_convert_filters(ass, args, settings, fps, out)
+        data = serialize_subtitles(ass, name, export=export, tags=args.tags, fps=fps, keep_brand=args.keep_brand)
+    except (
+        SubtitleFormatParseError,
+        UnsupportedEncodingError,
+        FramerateError,
+        AutomationError,
+        RenderError,
+        OSError,
+    ) as e:
+        out.error(f"aegisub-render: {e}")
+        return ExitCode.ERROR
+    except ScriptError as e:
+        if e.message:
+            out.error(e.message)
+        out.error("aegisub-render: the export filter failed; no output was written")
+        return ExitCode.ERROR
+    return write_output(data, b"", args.input, output, output if isinstance(output, Path) else args.input, False, out)
+
+
+def run_convert_filters(
+    ass: AssFile,
+    args: argparse.Namespace,
+    settings: Settings,
+    fps: Framerate | None,
+    out: Output,
+) -> bool:
+    """Run convert's --export-filters over `ass`. Returns whether there were any.
+
+    A chain of built-in filters needs nothing but the file; a Lua one needs the Aegisub
+    installation, which is only looked for in that case.
+    """
+    options = RenderOptions(
+        quiet=args.quiet,
+        progress=False,
+        video=VideoOptions(fps=args.fps),
+        export_filters=list(args.export_filters or []),
+        garbage_export_filters=args.garbage_export_filters,
+        confirm_export_filters=ask_export_filters(out),
+    )
+    chain = export_filter_chain(options, ass)
+    if not chain:
+        return False
+
+    # Only a filter that is neither built in nor a .py plugin of the extra autoload directories
+    # needs to know where Aegisub is, so that is looked up on demand and not before.
+    env: RenderEnvironment | None = None
+
+    def find_aegisub() -> tuple[AegisubPaths, str]:
+        nonlocal env
+        if env is None:
+            video = VideoOptions(fps=args.fps, timecodes=args.timecodes)
+            env = build_environment(ass, settings, subtitle_path=args.input, video=video)
+            for w in env.warnings:
+                out.message(w)
+        return env.paths, env.autoload
+
+    scan = args.scan_autoload if args.scan_autoload is not None else settings.scan_autoload
+    resolver = FilterResolver(settings, out=out, scan=scan, env_factory=find_aegisub)
+    resolved = resolver.resolve(chain)
+    run_export_filters(ass, resolved, settings, options, env, out, args.input, fps=fps)
+    return True
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -376,12 +690,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     handler: CommandHandler = args.handler
     if not hasattr(args, "config"):
-        return handler(args, Settings())
-    try:
-        settings = load_cli_settings(args)
-    except ConfigError as e:
-        print(f"aegisub-render: {e}", file=sys.stderr)
-        return ExitCode.ERROR
+        settings = Settings()
+    else:
+        try:
+            settings = load_cli_settings(args)
+        except ConfigError as e:
+            print(f"aegisub-render: {e}", file=sys.stderr)
+            return ExitCode.ERROR
+    strict = getattr(args, "strict", None)
+    set_strict_tag_parsing(strict if strict is not None else settings.strict_tag_parsing)
     return handler(args, settings)
 
 

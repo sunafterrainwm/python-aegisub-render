@@ -181,10 +181,127 @@ accel，後半多一個 `)` 參數）。
 下游的字幕工具集拿 1181 個真的 .ass、820573 行事件量過：10230 行會中這個形狀，全是 OP/ED 的
 fx 與 template 行。`tests/test_ass.py::test_parse_override_tags_nested_transform` 把這個行為釘住。
 
+## 自動化：巨集與匯出濾鏡（`automation/`）
+
+`automation/` 對應上游的 `namespace Automation4`：一個腳本能提供的兩種東西 —— 巨集
+（`register_macro`）與匯出濾鏡（`register_filter`）—— 的基底類別、登記表、內建的那幾個、
+`.py` automation 檔案，以及「名字 → 誰提供的」解析。Lua 那一半在 `host/` 與 `worker.py`。
+（本工具自己會做的事在 `tools/`，那是 `macro` 子命令，和這裡的 `Macro` 基底類別不是同一件事。）
+
+Aegisub 只有兩個 C++ 匯出濾鏡（`main.cpp` 的兩次 `AssExportFilterChain::Register`）：
+`Fix Styles`（優先度 −5000）與 `Transform Framerate`（1000）。本專案多一個自己的 `Shift Times`
+（0，就是 `macro offset`：同一段位移邏輯 `tools/offset.py::shift_events`，一邊當子命令、一邊當濾鏡；
+它的 `from_args` 特地把被 `:` 拆開的時間戳接回去，因為那是它唯一的參數）。其餘出現在 File → Export 清單裡的
+都是 autoload 腳本用 `aegisub.register_filter` 註冊的 Lua 濾鏡，本工具本來就能跑。
+`automation/base.py` 是可繼承的 `ExportFilter` 與註冊表（插入點照優先度，就是 `Register` 的做法），
+`fixstyle.py`／`framerate.py` 是那兩個的移植，`spec.py` 是參數語法，`resolve.py` 是名字解析與快取。
+
+- **順序是寫的順序，不是優先度。** 對話框的清單預設照優先度排，但有上移／下移按鈕，
+  而 `AssExporter::AddFilter` 是照清單當下的順序加入的 —— 所以「照使用者寫的順序跑」才是忠於上游。
+- **參數語法借 ffmpeg 的 filtergraph**（`name=k=v:k=v,name`）。和 ffmpeg 不同的是跳脫只有一層：
+  `\:` 在哪裡都是冒號，不會因為巢狀深度而要寫成 `\\\\:`。濾鏡名稱含空白是常態
+  （`Fix Styles`、`Clean Tags - 整理特效標籤`），所以空白不是分隔符；要跳脫的是 `, : = \ '`。
+- **只有 Python 濾鏡吃參數。** Lua 濾鏡的設定在 Aegisub 來自它自己的設定對話框
+  （`register_filter` 的第五個引數），headless 沒有東西可以驅動 —— 上游同樣拿不到，所以這裡不發明
+  傳法（`host.run_filter` 照舊傳空 table），給了參數就報錯。需要參數的濾鏡寫成 Python：內建的兩個，
+  或 autoload 目錄裡的 `.py`（`automation/plugin.py`，module 自己呼叫 `register_filter`）。`.py`
+  只要 import、不必開 Lua state，所以它們**一律**會被載入，不受 `--scan-autoload` 管；
+  Aegisub 只認 `.lua`／`.moon`，會忽略它們，兩邊可以放在同一個目錄。
+- **兩種基底類別，照 Lua API 的兩種註冊**：`Macro`（`process_macro` ＋ 可選的 `validate_macro`）與
+  `ExportFilter`（`process_filter`），`class MyCoolTool(Macro, ExportFilter)` 是合法的 ——
+  一個 Lua 腳本本來就可以同時 `register_macro` 與 `register_filter`。`register()` 依類別是哪一種
+  （或兩種）丟進對應的登記表。巨集那條路以無引數建構，所以兩用類別的選項都要有預設值。
+  `selected_lines`／`active_line` 留在簽章裡但目前一律傳 `[]`／`0`：這個工具還沒有選取的概念。
+  「內建還是來自某個檔案」是另一個軸，不是 Lua API 的分界，所以用 `is_builtin()` 看
+  `__module__` 判斷就好（外掛會以套件外的模組名 import，見下）。
+  `.py` 不是「被禁止的 automation」：`--script some.py` 會載入它、列出它註冊的東西，跑巨集時沒有
+  才說「這個檔案沒有巨集」 —— 誠實的失敗，而不是預先禁止。
+- **自動搜尋的副檔名集中在 `script_render.automation_files()`**：Lua 的 `.lua`／`.moon` 與外掛的
+  `.py` 由同一個函式列出（濾鏡掃描的 stat 快取也用它）。既然 `.py` 現在會合法地出現在 autoload
+  目錄裡，`resolve_script()` 就得知道自己要的是哪一種：它多了 `suffixes` 參數，
+  `--script some-plugin.py` 不再被當成 Lua 腳本載入，而是回一句「那是 Python 濾鏡外掛，
+  用 `--export-filters` 叫它的名字」。
+- **巨集與濾鏡分給兩個子命令**：`render` 永遠先跑巨集（沒指定就是 config 的預設腳本與巨集，
+  這是它一直以來的行為），濾鏡鏈接在後面；`convert` 不跑巨集，就是 File → Export。
+  所以「只跑某個濾鏡」是 `convert --export-filters ...`，不需要任何讓 `render` 跳過巨集的開關，
+  也不會出現 `--script kara-templater.lua --export-filters "Karaoke template"` 這種把同一件事
+  做兩次的寫法。`convert` 只有在鏈裡有非內建濾鏡時才去找 Aegisub 安裝
+  （`resolve_builtin_chain` 先試一次），所以純格式轉換與純內建濾鏡都不需要裝 Aegisub。
+- **檔案自己記的那串濾鏡**：Aegisub 的匯出對話框會把勾選的名字以 `|` 串起來寫回
+  `[Aegisub Project Garbage]` 的 `Export Filters:`（`dialog_export.cpp` 的解構子），下次開對話框時
+  再勾回去。`--[no-]garbage-export-filters` 就是這個「再勾回去」：和 `--export-filter` 互斥
+  （一個是跑我說的、一個是跑檔案記的），兩個都沒給時只有互動終端機會問，其他情況印一行提示然後不跑 ——
+  非互動的預設一定要是「不做」。那串只有名字沒有設定，所以 `Transform Framerate` 這種非參數不可的
+  從那裡跑會報錯，這是誠實的結果而不是要補的洞。另外 Windows 的 `isatty()` 連 NUL 都說是終端機，
+  所以「是不是真的互動」看的是讀進來是不是立刻 EOF。
+- **額外的 autoload 目錄**（`--autoload-dirs`／`--autoload-dirs-prepend`、
+  `AEGISUB_AUTOLOAD_DIRS[_PREPEND]`、`config.py` 的 `AUTOLOAD_DIRS[_PREPEND]`）：把只有這個工具看得懂的
+  `.py` 塞進 Aegisub 安裝裡並不合理，所以可以指自己的資料夾。做法是在 `settings.effective_autoload()`
+  把它們併進 Aegisub 的 `Path/Automation/Autoload` 選項字串裡 —— 下游（`--script` 的名字搜尋、
+  `.py` 外掛載入、濾鏡掃描與它的快取鍵）全都已經在用 `automation_dirs()` 讀那個字串，所以一處改完
+  到處生效，連快取失效都是自動的（目錄清單變了＝鍵變了）。`automation_dirs()` 順手去重。
+- **名字解析與快取**：內建 → `--script` 的腳本 → 額外目錄的 `.py` 外掛（不需要 Aegisub）→
+  Aegisub autoload 的 `.py` → （`--scan-autoload` 時）掃 autoload 的 Lua。
+  `FilterResolver` 因此收一個 `env_factory`：`convert` 只有在真的需要知道 Aegisub 在哪時才去建
+  `RenderEnvironment`，純內建濾鏡與純外部 `.py` 外掛完全不碰 Aegisub 安裝。
+  掃描很貴（一個腳本一個 Lua state，而且 DependencyControl 被封印的腳本會載入失敗，只記一行訊息），
+  所以結果寫進 `%TEMP%\aegisub-render\export-filters.json`，鍵是 autoload 目錄清單加上每個腳本的
+  mtime 與大小；取用時還會再確認那個腳本真的仍註冊著這個名字，否則整份快取丟掉重掃。
+- **`Transform Framerate` 需要 `ass/override.py` 的寫回能力**：`AssOverrideParameter::Set`
+  （`set_str`／`set_int`／`set_double`／`set_bool`）、BLOCK 參數的惰性 `get_block()`、
+  `AssDialogueBlockOverride::ProcessParameters`（會遞迴進 `\t`）與 `AssDialogue::UpdateText`。
+  `UpdateText` 是從 blocks 重建 `Text`，所以會踩到〈覆寫標籤：切 token 不是逐位元組安全的〉
+  那個坑 —— 這是 Aegisub 自己的行為（它平常根本不重建 `Text`），`--strict`／
+  `set_strict_tag_parsing(True)` 可以讓巢狀 `\t(...)` 原封不動地接回去。
+- 移植時照抄的細節：`trunc_cs` 與卡拉OK分支用 C 的除法（往零取整，所以用 `_crt.cdiv`）、
+  `RELATIVE_TIME_START` 的「非零不可變成零」、結束時間加 9 再截到 cs、`float_to_string` 的
+  `%.3f` 去尾零。
+
+## 其他字幕格式（`ass/formats/`）
+
+`.srt`、`.ttxt`、`.txt`、`.transtation.txt` 照 `src/subtitle_format_*.cpp` 移植，`.vtt` 與 `.mkv`
+是本專案補的。共用的那一半（`SubtitleFormat` 的 Sort／StripComments／RecombineOverlaps／
+MergeIdentical／ConvertNewlines／StripTags／CanSave）在 `formats/base.py`，是一個可繼承的
+abstract class：加格式或改格式都是寫一個子類別再 `register_format()`，和上游用
+`LoadFormats` 註冊、`GetReader`／`GetWriter` 依副檔名找第一個接受者一樣。
+
+幾個刻意的決定：
+
+- **`TagMode`：匯出預設保留 `{...}`。** 上游的 exporter 要嘛剝掉全部標籤（ttxt／txt／transtation），
+  要嘛只翻譯 `.srt` 認得的 `\b\i\u\s`（`ConvertTags`）。但這些檔案的實際消費者是播放器，而播放器的
+  字幕解析器多半是 libass，看得懂覆寫標籤；剝掉等於無謂地丟掉定位、字型、卡拉OK。所以
+  `.srt`／`.vtt`／`.ttxt` 預設 `keep`，`.txt`／TranStation（給人讀的）預設 `strip`，
+  `html` 則是上游那條路。沒有一個 writer 寫樣式表 —— 這些格式都沒有能表達 ASS 樣式的欄位。
+- **`RecombineOverlaps` 用索引而不是連結串列。** 上游走的是 boost intrusive list，兩個 iterator
+  加上「解構即從串列移除」；移植時保留同一套語意：`nxt` 就是 `next` iterator 的索引，所有插入都落在
+  它之後（所以不會動到它），最後兩行移除讓它退兩格。
+- **`.ttxt` 的 XML 不保證逐位元組相同。** 上游用 wxWidgets 的 `wxXmlDocument::Save`，要逐位元組相同
+  得連 wx 的 XML writer 一起移植。結構、屬性、順序（包含 `WriteHeader` 把 `TextSampleDescription`
+  塞進 `TextStreamHeader` 裡那個巢狀）都照抄，縮排與換行照 wx 的樣子（兩格、LF、沒有 BOM、
+  只有文字子節點的元素寫成一行）。另外 `Timing/Default Duration` 在上游其實也不會寫進檔案
+  （結尾那個空 sample 只寫 `sampleTime`，也就是它的 start），`default_duration` 保留是為了忠於上游。
+- **TranStation 的幀率是參數。** 上游用 `AskForFPS` 對話框（不給 VFR 選項）。這裡是 `fps=`／
+  `--fps`／`--timecodes`，而且不拒絕 VFR 時間碼檔；`SmpteFormatter`、`Framerate.smpte_at_frame`／
+  `frame_at_smpte` 都照 `libaegisub` 移植（含 NTSC drop-frame）。
+- **Matroska 用 PyAV。** 上游自帶 `MatroskaParser.c`（3350 行）＋`mkv_wrap.cpp`，照移植不值得；
+  ffmpeg 的 matroska demuxer 交出來的東西剛好就是 `MatroskaWrapper::GetSubtitles` 要的：
+  CodecPrivate 當 extradata、每個 block 是原始的 `ReadOrder,Layer,Style,...` 行。所以移植的是外圈：
+  extradata 逐行餵給 `AssParser`（軌道自己的樣式與 script info 就跟著過來）、`[Events]`、
+  依 block 的時間戳與第二個逗號之後的內容組 `Dialogue:` 行、照 ReadOrder 排序；`S_TEXT/UTF8` 走
+  `SrtTagParser` 並把換行換成 `\N`，64 MiB 上限也照上游。多軌時預設第一條（上游會問）。
+- **WebVTT 的對應規則**（上游沒有這個格式）整理在 README 的「WebVTT 怎麼對應到 ASS」。兩個值得記的
+  選擇：margin 是 script 單位，所以只有真的用到定位的檔案才補 `PlayResX`／`PlayResY`（預設 1280x720），
+  沒定位的檔案保持和 `LoadDefault` 一樣不帶解析度；寫出時 `<` 與 `>` escape 成 `&lt;`／`&gt;`
+  （順便擋掉文字裡的 `-->`），但 `keep` 模式下 `&` 不 escape —— `{\c&H00FF00&}` 必須原樣送到播放器，
+  而 WebVTT 的解析器對落單的 `&` 本來就有錯誤回復。
+
+讀取端一律只接受 UTF-8（BOM 可有可無）與帶 BOM 的 UTF-16，和 `.ass` 一樣不做 Aegisub 的編碼偵測；
+寫出端一律 UTF-8 BOM + CRLF（`TextFileWriter` 在 Windows 的行為），`.ttxt` 例外（XML，LF、無 BOM）。
+
 ## 內建巨集（`macro`）
 
-`aegisub-render macro` 是不需要 Aegisub 腳本、也不啟動 Lua worker 的 Python 操作（`src/aegisub_render/macro/`）。
-每個子指令的參數定義與 CLI 入口都放在 `src/aegisub_render/macro/` 對應模組內，並透過 `CommandRegistry.register_command`
+`aegisub-render macro` 是不需要 Aegisub 腳本、也不啟動 Lua worker 的 Python 操作（`src/aegisub_render/tools/`）。
+每個子指令的參數定義與 CLI 入口都放在 `src/aegisub_render/tools/` 對應模組內，並透過 `CommandRegistry.register_command`
 註冊（頂層 CLI 同樣以此註冊並經由 `args.handler` 直接派發）；`aegisub-render --help` 只在 `macro` 說明印出已註冊的巨集名稱，
 執行 `aegisub-render macro`（或 `aegisub-render macro --help`）時才列出每個子指令的用途。
 輸出沿用 `render` 的路徑（`runner._read_input_ass`／`_write_output`：就地覆寫、`-o`、`-o -`、`-y`/`-n`、`--dry-run`），

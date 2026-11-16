@@ -1,13 +1,26 @@
-"""Shift subtitle dialogue times by a timestamp or frame count without starting Aegisub."""
+"""Shift subtitle dialogue times by a timestamp or frame count without starting Aegisub.
+
+Two ways in: the `macro offset` subcommand, which reads and writes the file itself, and the
+built-in `Shift Times` export filter, which does the same to a file someone else is holding
+(`--export-filters "Shift Times=+0:00:01.50"`).
+"""
 
 import argparse
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal, Self, override
 
+from aegisub_render.ass.file import AssFile
 from aegisub_render.ass.time import clamp_time
 from aegisub_render.ass.writer import serialize_ass
+from aegisub_render.automation import (
+    AutomationContext,
+    AutomationError,
+    ExportFilter,
+    FilterArgs,
+    register_filter,
+)
 from aegisub_render.cli import (
     add_base_args,
     add_output_args,
@@ -15,11 +28,11 @@ from aegisub_render.cli import (
     build_render_options,
     may_replace,
 )
-from aegisub_render.macro import register_command
 from aegisub_render.output import Output
 from aegisub_render.paths import AegisubPaths
 from aegisub_render.runner import ExitCode, RenderError, RenderOptions, read_input_ass, write_output
 from aegisub_render.settings import Settings, read_aegisub_options
+from aegisub_render.tools import register_command
 from aegisub_render.video.context import build_video_context, update_relative_paths
 from aegisub_render.video.vfr import START, Framerate
 
@@ -64,6 +77,70 @@ def shift_time_by_frames(ms: int, delta_frames: int, timecodes: Framerate) -> in
     return clamp_time(timecodes.time_at_frame(i, START))
 
 
+def shift_events(file: AssFile, shift: Offset, timecodes: Framerate | None = None) -> None:
+    """Shift every dialogue line of `file` by `shift`, in place.
+
+    A frame offset needs `timecodes` (the video's, --timecodes or --fps); a time offset does not.
+    Times are clamped to the range agi::Time can hold, as everywhere else.
+    """
+    if shift.by_frames:
+        if timecodes is None or not timecodes.is_loaded():
+            raise AutomationError("cannot shift by frames without a video, timecodes, or --fps")
+        for line in file.events:
+            line.start = shift_time_by_frames(line.start, shift.amount, timecodes)
+            line.end = shift_time_by_frames(line.end, shift.amount, timecodes)
+    else:
+        for line in file.events:
+            line.start = clamp_time(line.start + shift.amount)
+            line.end = clamp_time(line.end + shift.amount)
+
+
+class ShiftTimesFilter(ExportFilter):
+    """`macro offset` as an export filter, so it can be part of an --export-filters chain.
+
+    Not one of Aegisub's: it is the Timing > Shift Times dialog, which Aegisub has no export
+    filter for. `by` is what `macro offset` takes as its argument.
+    """
+
+    name: ClassVar[str] = "Shift Times"
+    description: ClassVar[str] = (
+        "Shift every line by a timestamp ([+-][[[hh:]mm:]ss].ms) or a frame count ([+-]frames)."
+    )
+    priority: ClassVar[int] = 0
+    positional: ClassVar[tuple[str, ...]] = ("by",)
+
+    def __init__(self, by: str = "") -> None:
+        if not by:
+            raise AutomationError(
+                f"{self.name}: needs the amount to shift by, e.g. "
+                f"'{self.name}=+0:00:01.50' or '{self.name}=-24' (frames)"
+            )
+        try:
+            self.offset = parse_offset(by)
+        except ValueError as e:
+            raise AutomationError(f"{self.name}: {e}") from None
+
+    @classmethod
+    @override
+    def from_args(cls, args: FilterArgs) -> Self:
+        """Like the base class, except that a timestamp's own colons need no escaping.
+
+        `Shift Times=+0:00:01.50` would otherwise be three positional options, `:` being what
+        separates them. This filter takes exactly one, so they are joined back together;
+        quoting it (`Shift Times='+0:00:01.50'`) works as well, as it does anywhere.
+        """
+        if len(args.positional) > 1 and "by" not in args.options:
+            args = FilterArgs(args.name, [":".join(args.positional)], dict(args.options))
+        return super().from_args(args)
+
+    @override
+    def process_filter(self, file: AssFile, ctx: AutomationContext) -> None:
+        shift_events(file, self.offset, ctx.fps)
+
+
+register_filter(ShiftTimesFilter)
+
+
 def offset(
     input_path: Path,
     output_path: Path | Literal["-"] | None,
@@ -103,17 +180,11 @@ def offset(
     # the linked paths are written relative to where this is saved (Aegisub does it on save)
     update_relative_paths(ass, video, paths, str(save_to.resolve().parent))
 
-    if shift.by_frames:
-        if not video.timecodes.is_loaded():
-            out.error("aegisub-render: cannot shift by frames without a video, timecodes, or --fps")
-            return ExitCode.ERROR
-        for line in ass.events:
-            line.start = shift_time_by_frames(line.start, shift.amount, video.timecodes)
-            line.end = shift_time_by_frames(line.end, shift.amount, video.timecodes)
-    else:
-        for line in ass.events:
-            line.start = clamp_time(line.start + shift.amount)
-            line.end = clamp_time(line.end + shift.amount)
+    try:
+        shift_events(ass, shift, video.timecodes)
+    except AutomationError as e:
+        out.error(f"aegisub-render: {e}")
+        return ExitCode.ERROR
 
     data = serialize_ass(ass, aeg.save_ui_state, options.keep_brand)
     return write_output(data, original, input_path, output_path, save_to, options.dry_run, out)
@@ -146,4 +217,12 @@ def _run_offset(args: argparse.Namespace, settings: Settings) -> ExitCode:
     return offset(args.input, output, args.offset, settings, options, out)
 
 
-__all__ = ["Offset", "offset", "parse_offset", "parse_offset_arg", "shift_time_by_frames"]
+__all__ = [
+    "Offset",
+    "ShiftTimesFilter",
+    "offset",
+    "parse_offset",
+    "parse_offset_arg",
+    "shift_events",
+    "shift_time_by_frames",
+]

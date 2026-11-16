@@ -9,7 +9,7 @@ from typing import ClassVar, Self
 
 from aegisub_render._crt import format_g
 from aegisub_render.ass.color import Color
-from aegisub_render.ass.override import BlockType, parse_dialogue_blocks
+from aegisub_render.ass.override import Block, BlockType, parse_dialogue_blocks
 from aegisub_render.ass.time import ass_formatted, parse_time
 from aegisub_render.cutil import boost_lexical_double, boost_lexical_int, mid, trim
 
@@ -326,6 +326,18 @@ class AssDialogue:
     def strip_tags(self) -> None:
         """AssDialogue::StripTags: replace Text with get_stripped_text()."""
         self.text = self.get_stripped_text()
+
+    def update_text(self, blocks: list[Block]) -> None:
+        """AssDialogue::UpdateText: write blocks (from parse_dialogue_blocks) back into Text.
+
+        An override block is rebuilt from its tags, so this is how a change made through
+        `Block.process_parameters` reaches the line. An empty list leaves Text alone, as in
+        Aegisub. Rebuilding is not byte-exact for a nested `\\t(...)` unless the blocks were
+        parsed with `strict=True` -- see Block.get_text and parse_override_tags.
+        """
+        if not blocks:
+            return
+        self.text = "".join(block.get_text() for block in blocks)
 
     def copy(self) -> Self:
         """A copy with a new id, like Aegisub's copy constructor (`Id = ++next_id`).

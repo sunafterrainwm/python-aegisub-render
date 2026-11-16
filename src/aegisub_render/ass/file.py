@@ -127,6 +127,15 @@ class AssFile:
             sh = 1024 if sw == 1280 else wrap_int32(cdiv(sw * 3, 4))
         return sw, sh
 
+    def get_styles(self) -> list[str]:
+        """AssFile::GetStyles: the names of the styles, in file order."""
+        return [style.name for style in self.styles]
+
+    def get_style(self, name: str) -> AssStyle | None:
+        """AssFile::GetStyle: the first style with that name, compared case-insensitively."""
+        lower = name.lower()
+        return next((style for style in self.styles if style.name.lower() == lower), None)
+
     def add_extradata(self, key: str, value: str) -> int:
         for data in self.extradata:
             if data.key == key and data.value == value:

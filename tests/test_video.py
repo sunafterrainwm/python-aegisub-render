@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from aegisub_render.macro.offset import Offset, parse_offset, shift_time_by_frames
+from aegisub_render.tools.offset import Offset, parse_offset, shift_time_by_frames
 from aegisub_render.video.context import parse_framerate
 from aegisub_render.video.keyframes import load_keyframes
 from aegisub_render.video.probe import parse_dummy

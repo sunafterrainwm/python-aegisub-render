@@ -1,11 +1,12 @@
 """Dialogue block / override tag parsing (src/ass_dialogue.cpp ParseTags, src/ass_override.cpp)."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import override
 
-from aegisub_render._crt import atoi, strtol_hex
-from aegisub_render.cutil import mid, trim
+from aegisub_render._crt import atof, atoi, strtol_hex
+from aegisub_render.cutil import float_to_string, mid, trim
 
 
 class VarType(Enum):
@@ -170,9 +171,50 @@ class OverrideParam:
     classification: ParamClass
     value: str = ""
     omitted: bool = True
+    # AssOverrideParameter::block: a VarType.BLOCK parameter (`\t`'s last one) keeps the tags it
+    # holds as a block of its own once something asks for them, and the text then comes from it.
+    block: Block | None = None
+
+    def get_block(self) -> Block:
+        """`Get<AssDialogueBlockOverride*>()`: this parameter's tags, parsed on first use."""
+        if self.block is None:
+            text = self.value
+            self.block = Block(BlockType.OVERRIDE, text, parse_override_tags(text))
+        return self.block
 
     def get_str(self) -> str:
+        """`Get<std::string>()`: the block's text (without its braces) once there is a block."""
+        if self.block is not None:
+            text = self.block.get_text()
+            return text.removeprefix("{").removesuffix("}")
         return self.value
+
+    def set_str(self, new_value: str) -> None:
+        """`Set<std::string>`: the parameter is present from now on, and has no block."""
+        self.omitted = False
+        self.value = new_value
+        self.block = None
+
+    def set_int(self, new_value: int) -> None:
+        """`Set<int>`, including the `&HXX&` form an alpha parameter is written in."""
+        if self.classification is ParamClass.ALPHA:
+            self.set_str("&H%02X&" % mid(0, new_value, 255))
+        else:
+            self.set_str(str(new_value))
+
+    def set_double(self, new_value: float) -> None:
+        """`Set<double>`: utils.cpp's float_to_string (three decimals, trailing zeros trimmed)."""
+        self.set_str(float_to_string(new_value))
+
+    def set_bool(self, new_value: bool) -> None:
+        """`Set<bool>`, which is `Set<int>` of 0 or 1."""
+        self.set_int(int(new_value))
+
+    def get_double(self) -> float:
+        """`Get<double>()`: atof of the string form."""
+        if self.omitted:
+            raise ValueError("AssOverrideParameter::Get() called on omitted parameter")
+        return atof(self.get_str())
 
     def get_int(self, default: int | None = None) -> int:
         if self.omitted:
@@ -185,7 +227,7 @@ class OverrideParam:
                 len(self.value),
             )
             return mid(0, strtol_hex(self.value[pos:]), 255)
-        return atoi(self.value)
+        return atoi(self.get_str())
 
 
 def _tokenize(text: str) -> list[str]:
@@ -350,6 +392,34 @@ class Block:
     type: BlockType
     text: str  # GetText(): comment blocks include their braces
     tags: list[OverrideTag] = field(default_factory=list[OverrideTag])
+
+    def get_text(self) -> str:
+        """AssDialogueBlock::GetText; an override block is rebuilt from its tags, as in Aegisub.
+
+        So a block whose tags were changed (see process_parameters) comes back out changed. The
+        rebuild is only as faithful as the splitting was: with the default, Aegisub-compatible
+        tag parsing a nested `\\t(...)` does not survive the round trip byte for byte (see
+        parse_override_tags). That is Aegisub's behaviour too -- it is why it keeps `Text` as it
+        is unless a line was really edited -- and `set_strict_tag_parsing(True)` avoids it.
+        """
+        if self.type is BlockType.OVERRIDE:
+            self.text = "{" + "".join(str(tag) for tag in self.tags) + "}"
+        return self.text
+
+    def process_parameters(self, callback: Callable[[str, OverrideParam], None]) -> None:
+        """AssDialogueBlockOverride::ProcessParameters: callback(tag name, parameter).
+
+        Omitted parameters are skipped and a parameter that holds a block of its own (`\\t`'s
+        last one) is walked into, both as in Aegisub. The callback changes a parameter with its
+        set_* methods; AssDialogue.update_text then writes the blocks back into the line.
+        """
+        for tag in self.tags:
+            for par in tag.params:
+                if par.omitted:
+                    continue
+                callback(tag.name, par)
+                if par.type is VarType.BLOCK:
+                    par.get_block().process_parameters(callback)
 
 
 def parse_dialogue_blocks(text: str, strict: bool | None = None) -> list[Block]:
